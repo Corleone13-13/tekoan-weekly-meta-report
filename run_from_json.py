@@ -88,7 +88,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except (Exception, SystemExit):
         tb = traceback.format_exc()
         print("FALHA:\n" + tb)
         nome = "mensal" if os.environ.get("REPORT_MODE") == "monthly" else "semanal"
