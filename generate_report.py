@@ -252,9 +252,16 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 </body></html>"""
 
 outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
+# sempre grava o HTML completo do relatorio (fallback de corpo de e-mail sem dependencia de sistema)
+(outdir / "report.html").write_text(html)
 pdf_path = outdir / f"Tekoan_Meta_Ads_semanal_{maxd.isoformat()}.pdf"
-from weasyprint import HTML
-HTML(string=html).write_pdf(str(pdf_path))
+pdf_ok = False
+try:
+    from weasyprint import HTML
+    HTML(string=html).write_pdf(str(pdf_path))
+    pdf_ok = True
+except Exception as _ex:
+    print("WARN: PDF indisponivel (weasyprint):", _ex)
 
 # ----------------------------- e-mail -----------------------------
 subject = f"[Tekoan] Relatório Meta Ads — semana {period_str}"
@@ -292,8 +299,10 @@ body_text = "\n".join(lines)
 
 email = dict(recipient=args.recipient, subject=subject,
              body_html=body_html, body_text=body_text,
-             attachment=str(pdf_path))
+             attachment=str(pdf_path) if pdf_ok else "",
+             report_html=str(outdir / "report.html"))
 (outdir / "email.json").write_text(json.dumps(email, ensure_ascii=False, indent=2))
 
-print(json.dumps({"pdf": str(pdf_path), "email_json": str(outdir / "email.json"),
-                  "subject": subject}, ensure_ascii=False))
+print(json.dumps({"pdf": str(pdf_path) if pdf_ok else None,
+                  "email_json": str(outdir / "email.json"),
+                  "subject": subject, "pdf_ok": pdf_ok}, ensure_ascii=False))

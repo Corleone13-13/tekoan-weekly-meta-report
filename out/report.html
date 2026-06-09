@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<style>
+@page { size: A4; margin: 20mm 18mm 18mm 18mm;
+  @bottom-center { content: "Tekoan · Relatório semanal Meta Ads · confidencial";
+    font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #9aa3ad; }
+  @bottom-right { content: "Pág. " counter(page) " / " counter(pages);
+    font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #9aa3ad; } }
+* { box-sizing: border-box; }
+body { font-family: Helvetica, Arial, sans-serif; color: #1d2530; font-size: 9.7pt; line-height: 1.5; margin: 0; }
+.top { border-bottom: 2.5px solid #1F3A5F; padding-bottom: 12px; margin-bottom: 20px; }
+.kicker { font-size: 8pt; letter-spacing: 2.5px; text-transform: uppercase; color: #C9A227; font-weight: 700; margin: 0 0 4px 0; }
+h1 { font-size: 19pt; color: #1F3A5F; margin: 0 0 8px 0; line-height: 1.15; letter-spacing: -0.3px; }
+.meta { font-size: 8.6pt; color: #5a6472; margin: 0; }
+.meta strong { color: #1d2530; }
+h2 { font-size: 12pt; color: #1F3A5F; margin: 22px 0 9px 0; padding-bottom: 4px; border-bottom: 1px solid #e3e7ec; }
+h2 .num { color: #C9A227; font-weight: 800; margin-right: 6px; }
+p { margin: 0 0 9px 0; }
+.lead { background: #fbf7ea; border-left: 4px solid #C9A227; padding: 13px 16px; border-radius: 0 5px 5px 0; margin: 0 0 6px 0; }
+.lead .tag { font-size: 7.5pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #C9A227; display: block; margin-bottom: 3px; }
+.lead p { margin: 0; font-size: 9.7pt; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 4px 0; font-size: 8.7pt; }
+thead th { background: #1F3A5F; color: #fff; font-weight: 600; padding: 7px 6px; text-align: right; border: none; }
+thead th:first-child { text-align: left; }
+tbody td { padding: 6px 6px; text-align: right; border-bottom: 1px solid #eaedf1; }
+tbody td:first-child { text-align: left; font-weight: 600; }
+tbody tr.total td { background: #1F3A5F; color: #fff; font-weight: 700; border: none; }
+tbody tr.win td { background: #f1f7f0; }
+tbody tr.lose td { background: #fcf2f1; }
+.d-good { color: #2c6e2c; font-weight: 700; }
+.d-bad { color: #a83228; font-weight: 700; }
+.finding { margin: 0 0 11px 0; padding-left: 14px; border-left: 3px solid #1F3A5F; }
+.finding .ft { font-weight: 700; color: #1F3A5F; font-size: 10pt; }
+.small { font-size: 8.2pt; color: #6b7785; }
+</style></head><body>
+<div class="top">
+  <p class="kicker">Relatório semanal · Meta Ads</p>
+  <h1>Tekoan — Performance da semana</h1>
+  <p class="meta"><strong>Conta:</strong> Tekoan — Conta de Anúncios &nbsp;·&nbsp;
+  <strong>Período:</strong> 02/06 a 08/06/2026 (7 dias) &nbsp;·&nbsp;
+  <strong>Vertical:</strong> Estética (foco deliberado de GTM)<br>
+  <strong>Gerado em:</strong> 09/06/2026 14:40 &nbsp;·&nbsp;<strong>Fonte:</strong> Meta Ads API via Windsor.ai</p>
+</div>
+<div class="lead"><span class="tag">Ponto crítico — ler primeiro</span><p>A conta <b>não registra “Leads”</b> (formulário/pixel zerados). O único evento de conversão é <b>conversa iniciada no WhatsApp (CTWA)</b>. Portanto, “Conversas” é o proxy de lead e o <b>CPL é custo por conversa</b> — não por lead qualificado, agendamento ou fechamento. Validar objetivo e rastreio pós-conversa antes de escalar verba.</p></div>
+<h2><span class="num">01</span>Consolidado e por criativo</h2>
+<table><thead><tr><th>Recorte</th><th>Invest.</th><th>CPM</th><th>CPC</th><th>CTR</th><th>Cliques</th><th>% Conv</th><th>Conversas</th><th>CPL</th></tr></thead><tbody><tr class="total"><td>Semana toda</td><td>R$ 423,56</td><td>R$ 84,49</td><td>R$ 4,24</td><td>1,99%</td><td>100</td><td>18,0%</td><td>18</td><td>R$ 23,53</td></tr><tr class="win"><td>Estático Estética 1 — Cópia</td><td>R$ 99,16</td><td>R$ 79,01</td><td>R$ 3,00</td><td>2,63%</td><td>33</td><td>27,3%</td><td>9</td><td>R$ 11,02</td></tr><tr class="lose"><td>Estático Estética 1</td><td>R$ 324,40</td><td>R$ 86,32</td><td>R$ 4,84</td><td>1,78%</td><td>67</td><td>13,4%</td><td>9</td><td>R$ 36,04</td></tr></tbody></table>
+<p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>
+<h2><span class="num">02</span>Comparativo com a semana anterior</h2><table><thead><tr><th>Métrica</th><th>Semana anterior</th><th>Esta semana</th><th>Δ</th></tr></thead><tbody><tr><td>Investimento</td><td>R$ 407,75</td><td>R$ 423,56</td><td class="d-good">▲ 4%</td></tr><tr><td>CPC</td><td>R$ 6,68</td><td>R$ 4,24</td><td class="d-good">▼ 37%</td></tr><tr><td>CTR</td><td>1,43%</td><td>1,99%</td><td class="d-good">▲ 40%</td></tr><tr><td>Conversas</td><td>16</td><td>18</td><td class="d-good">▲ 12%</td></tr><tr><td>CPL</td><td>R$ 25,48</td><td>R$ 23,53</td><td class="d-good">▼ 8%</td></tr></tbody></table>
+<h2><span class="num">03</span>Achados e ações</h2>
+<div class="finding"><p><span class="ft">1. “Leads” = conversas no WhatsApp.</span><br>Nenhum lead de formulário ou pixel disparou na semana. O único evento de conversão é conversa iniciada (CTWA), então o CPL é custo por conversa — não por lead qualificado, agendamento ou fechamento. Validar objetivo e rastreio pós-conversa antes de escalar verba.</p></div><div class="finding"><p><span class="ft">2. Desequilíbrio entre criativos.</span><br>Estático Estética 1 — Cópia fecha a semana com o melhor CPL (R$ 11,02) vs. R$ 36,04 do Estático Estética 1. Mesmo assim, o pior criativo levou mais verba (R$ 324,40 vs. R$ 99,16) — realocar.</p></div><div class="finding"><p><span class="ft">3. Comparativo com a semana anterior.</span><br>CPC saiu de R$ 6,68 para R$ 4,24; CPL de R$ 25,48 para R$ 23,53; conversas: subiu 2 (16 → 18).</p></div><div class="finding"><p><span class="ft">4. Volume baixo — leia por semana, não por dia.</span><br>São 18 conversas na semana (~2.6/dia). Oscilações diárias de CPL são ruído de amostra, não tendência.</p></div><div class="finding"><p><span class="ft">5. CPM elevado.</span><br>CPM de R$ 84,49 sugere público estreito ou saturação. Acompanhar frequência e considerar ampliação se confirmar.</p></div>
+</body></html>
