@@ -58,6 +58,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("data")
 ap.add_argument("--outdir", default=".")
 ap.add_argument("--recipient", default="")
+ap.add_argument("--mode", default="weekly", choices=["weekly", "monthly"])
 args = ap.parse_args()
 
 rows = json.loads(Path(args.data).read_text())
@@ -70,28 +71,51 @@ dates = sorted({r["date"] for r in rows})
 if not dates:
     sys.exit("Sem dados.")
 maxd = dt.date.fromisoformat(dates[-1])
-cut  = maxd - dt.timedelta(days=6)          # janela "semana reportada" = últimos 7 dias
-prev_cut = cut - dt.timedelta(days=7)
+MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho",
+         "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 
-def in_week(r):  return dt.date.fromisoformat(r["date"]) >= cut
-def in_prev(r):  return prev_cut <= dt.date.fromisoformat(r["date"]) < cut
+def _d(r):  return dt.date.fromisoformat(r["date"])
 
-week_rows = [r for r in rows if in_week(r)]
-prev_rows = [r for r in rows if in_prev(r)]
+if args.mode == "monthly":
+    # mês reportado = mês da última data; comparativo = mês calendário anterior
+    y, m = maxd.year, maxd.month
+    first = dt.date(y, m, 1)
+    pm_y, pm_m = (y - 1, 12) if m == 1 else (y, m - 1)
+    cur_rows  = [r for r in rows if (_d(r).year, _d(r).month) == (y, m)]
+    prev_rows = [r for r in rows if (_d(r).year, _d(r).month) == (pm_y, pm_m)]
+    period_str = f"{first.strftime('%d/%m')} a {maxd.strftime('%d/%m/%Y')}"
+    per_days = (maxd - first).days + 1
+    mlabel = f"{MESES[m-1]}/{y}"
+    L = dict(kicker="Relatório mensal · Meta Ads",
+             title="Tekoan — Performance do mês", per_suffix=f"({mlabel})",
+             total="Mês todo", comp_title="Comparativo com o mês anterior",
+             comp_prev="Mês anterior", comp_cur="Este mês", unit="mês",
+             fname="mensal", subj=f"mês {mlabel}", footer="Relatório mensal Meta Ads")
+else:  # weekly
+    cut = maxd - dt.timedelta(days=6)        # janela "semana reportada" = últimos 7 dias
+    prev_cut = cut - dt.timedelta(days=7)
+    cur_rows  = [r for r in rows if _d(r) >= cut]
+    prev_rows = [r for r in rows if prev_cut <= _d(r) < cut]
+    period_str = f"{cut.strftime('%d/%m')} a {maxd.strftime('%d/%m/%Y')}"
+    per_days = 7
+    L = dict(kicker="Relatório semanal · Meta Ads",
+             title="Tekoan — Performance da semana", per_suffix="(7 dias)",
+             total="Semana toda", comp_title="Comparativo com a semana anterior",
+             comp_prev="Semana anterior", comp_cur="Esta semana", unit="semana",
+             fname="semanal", subj=f"semana {period_str}", footer="Relatório semanal Meta Ads")
 
-W = agg(week_rows)
+W = agg(cur_rows)
 P = agg(prev_rows) if prev_rows else None
 
-# por criativo (na semana reportada)
+# por criativo (no período reportado)
 creatives = defaultdict(list)
-for r in week_rows:
+for r in cur_rows:
     creatives[r["ad_name"]].append(r)
 cre_aggs = sorted(
     [(name, agg(rs)) for name, rs in creatives.items()],
     key=lambda x: (x[1]["cpl"] if x[1]["conv"] else 9e9),
 )
 
-period_str = f"{cut.strftime('%d/%m')} a {maxd.strftime('%d/%m/%Y')}"
 gen_str = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
 
 # ----------------------------- findings (dinâmicos) -----------------------------
@@ -101,7 +125,7 @@ findings = []
 if W["leads"] == 0 and W["conv"] > 0:
     findings.append((
         "“Leads” = conversas no WhatsApp.",
-        "Nenhum lead de formulário ou pixel disparou na semana. O único evento de "
+        "Nenhum lead de formulário ou pixel disparou no período. O único evento de "
         "conversão é conversa iniciada (CTWA), então o CPL é custo por conversa — "
         "não por lead qualificado, agendamento ou fechamento. Validar objetivo e "
         "rastreio pós-conversa antes de escalar verba."
@@ -113,7 +137,7 @@ if len(valid) >= 2:
     best_n, best = valid[0]
     worst_n, worst = valid[-1]
     if worst["cpl"] > best["cpl"] * 1.2:
-        msg = (f"{best_n} fecha a semana com o melhor CPL ({brl(best['cpl'])}) "
+        msg = (f"{best_n} fecha o período com o melhor CPL ({brl(best['cpl'])}) "
                f"vs. {brl(worst['cpl'])} do {worst_n}.")
         if worst["spend"] > best["spend"]:
             msg += (f" Mesmo assim, o pior criativo levou mais verba "
@@ -128,7 +152,7 @@ if P and P["conv"] > 0:
     dconv = "estável" if abs(W["conv"]-P["conv"]) <= 1 else (
         f"{'subiu' if W['conv']>P['conv'] else 'caiu'} {abs(W['conv']-P['conv']):.0f}")
     findings.append((
-        "Comparativo com a semana anterior.",
+        f"{L['comp_title']}.",
         f"CPC saiu de {brl(P['cpc'])} para {brl(W['cpc'])}; "
         f"CPL de {brl(P['cpl'])} para {brl(W['cpl'])}; "
         f"conversas: {dconv} ({P['conv']:.0f} → {W['conv']:.0f})."
@@ -137,8 +161,8 @@ if P and P["conv"] > 0:
 # 4. volume baixo
 if W["conv"] < 20:
     findings.append((
-        "Volume baixo — leia por semana, não por dia.",
-        f"São {W['conv']:.0f} conversas na semana (~{W['conv']/7:.1f}/dia). "
+        f"Volume baixo — leia por {L['unit']}, não por dia.",
+        f"São {W['conv']:.0f} conversas no período (~{W['conv']/per_days:.1f}/dia). "
         "Oscilações diárias de CPL são ruído de amostra, não tendência."
     ))
 
@@ -153,7 +177,7 @@ if W["cpm"] > 70:
 # ----------------------------- HTML/PDF -----------------------------
 CSS = """
 @page { size: A4; margin: 20mm 18mm 18mm 18mm;
-  @bottom-center { content: "Tekoan · Relatório semanal Meta Ads · confidencial";
+  @bottom-center { content: "Tekoan · Relatório Meta Ads · confidencial";
     font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #9aa3ad; }
   @bottom-right { content: "Pág. " counter(page) " / " counter(pages);
     font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #9aa3ad; } }
@@ -194,7 +218,7 @@ def row_html(label, a, cls=""):
 head = ('<tr><th>Recorte</th><th>Invest.</th><th>CPM</th><th>CPC</th><th>CTR</th>'
         '<th>Cliques</th><th>% Conv</th><th>Conversas</th><th>CPL</th></tr>')
 
-cons = row_html("Semana toda", W, "total")
+cons = row_html(L["total"], W, "total")
 cre_html = ""
 for i, (n, a) in enumerate(cre_aggs):
     cls = "win" if (i == 0 and a["conv"] > 0 and len(cre_aggs) > 1) else (
@@ -209,8 +233,8 @@ if P:
         return (f'<tr><td>{label}</td><td>{fmt(prev)}</td><td>{fmt(cur)}</td>'
                 f'<td class="d-{c}">{d}</td></tr>')
     wow_html = (
-        '<table><thead><tr><th>Métrica</th><th>Semana anterior</th>'
-        '<th>Esta semana</th><th>Δ</th></tr></thead><tbody>'
+        f'<table><thead><tr><th>Métrica</th><th>{L["comp_prev"]}</th>'
+        f'<th>{L["comp_cur"]}</th><th>Δ</th></tr></thead><tbody>'
         + wow_row("Investimento", "spend", brl, lower_better=False)
         + wow_row("CPC", "cpc", brl)
         + wow_row("CTR", "ctr", pct2, lower_better=False)
@@ -235,10 +259,10 @@ for i, (t, b) in enumerate(findings, 1):
 html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <style>{CSS}</style></head><body>
 <div class="top">
-  <p class="kicker">Relatório semanal · Meta Ads</p>
-  <h1>Tekoan — Performance da semana</h1>
+  <p class="kicker">{L["kicker"]}</p>
+  <h1>{L["title"]}</h1>
   <p class="meta"><strong>Conta:</strong> Tekoan — Conta de Anúncios &nbsp;·&nbsp;
-  <strong>Período:</strong> {period_str} (7 dias) &nbsp;·&nbsp;
+  <strong>Período:</strong> {period_str} {L["per_suffix"]} &nbsp;·&nbsp;
   <strong>Vertical:</strong> Estética (foco deliberado de GTM)<br>
   <strong>Gerado em:</strong> {gen_str} &nbsp;·&nbsp;<strong>Fonte:</strong> Meta Ads API via Windsor.ai</p>
 </div>
@@ -246,7 +270,7 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <h2><span class="num">01</span>Consolidado e por criativo</h2>
 <table><thead>{head}</thead><tbody>{cons}{cre_html}</tbody></table>
 <p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>
-{('<h2><span class="num">02</span>Comparativo com a semana anterior</h2>' + wow_html) if wow_html else ''}
+{(f'<h2><span class="num">02</span>{L["comp_title"]}</h2>' + wow_html) if wow_html else ''}
 <h2><span class="num">{'03' if wow_html else '02'}</span>Achados e ações</h2>
 {find_html}
 </body></html>"""
@@ -254,7 +278,7 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
 # sempre grava o HTML completo do relatorio (fallback de corpo de e-mail sem dependencia de sistema)
 (outdir / "report.html").write_text(html)
-pdf_path = outdir / f"Tekoan_Meta_Ads_semanal_{maxd.isoformat()}.pdf"
+pdf_path = outdir / f"Tekoan_Meta_Ads_{L['fname']}_{maxd.isoformat()}.pdf"
 pdf_ok = False
 try:
     from weasyprint import HTML
@@ -264,7 +288,7 @@ except Exception as _ex:
     print("WARN: PDF indisponivel (weasyprint):", _ex)
 
 # ----------------------------- e-mail -----------------------------
-subject = f"[Tekoan] Relatório Meta Ads — semana {period_str}"
+subject = f"[Tekoan] Relatório Meta Ads — {L['subj']}"
 
 # corpo HTML enxuto (resumo + tabela)
 body_rows = (
@@ -277,7 +301,7 @@ body_rows = (
 top_findings = "".join(f"<li>{t} {b}</li>" for t, b in findings[:3])
 body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#1d2530;font-size:14px;line-height:1.55">
 <p>Olá,</p>
-<p>Segue o resumo de Meta Ads da Tekoan da semana <b>{period_str}</b>. PDF completo em anexo.</p>
+<p>Segue o resumo de Meta Ads da Tekoan referente a <b>{period_str}</b> {L["per_suffix"]}. PDF completo em anexo.</p>
 <table style="border-collapse:collapse;font-size:14px;margin:8px 0 14px">
 {body_rows}
 </table>
@@ -287,7 +311,7 @@ body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#1d2530
 </div>"""
 
 # corpo texto puro (fallback)
-lines = [f"Resumo Meta Ads Tekoan — semana {period_str}", "", 
+lines = [f"Resumo Meta Ads Tekoan — {L['subj']}", "",
          f"Investimento: {brl(W['spend'])}",
          f"CPC: {brl(W['cpc'])}  |  CTR: {pct2(W['ctr'])}",
          f"Conversas (WhatsApp): {W['conv']:.0f}",

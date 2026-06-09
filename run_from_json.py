@@ -62,8 +62,10 @@ def main():
     } for x in raw]
     Path("rows.json").write_text(json.dumps(rows, ensure_ascii=False))
 
+    mode = os.environ.get("REPORT_MODE", "weekly")
     subprocess.run(["python3", "generate_report.py", "rows.json",
-                    "--outdir", "./out", "--recipient", ",".join(TO)], check=True)
+                    "--outdir", "./out", "--recipient", ",".join(TO),
+                    "--mode", mode], check=True)
     e = json.loads(Path("out/email.json").read_text())
     pdf = Path(e["attachment"]) if e.get("attachment") else None
     has_pdf = bool(pdf and pdf.exists())
