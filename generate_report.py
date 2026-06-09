@@ -118,61 +118,86 @@ cre_aggs = sorted(
 
 gen_str = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
 
-# ----------------------------- findings (dinâmicos) -----------------------------
-findings = []
+# ----------------------------- diagnóstico de gestor (itens estruturados) -----------------------------
+# cada item: title, detail, action (str ou None), cert ('confirmado'|'validar'), prio (1|2|3)
+unidade = L["unit"]
+items = []
 
-# 1. sem leads reais
+# 1. Conversão = CTWA, não lead qualificado
 if W["leads"] == 0 and W["conv"] > 0:
-    findings.append((
-        "“Leads” = conversas no WhatsApp.",
-        "Nenhum lead de formulário ou pixel disparou no período. O único evento de "
-        "conversão é conversa iniciada (CTWA), então o CPL é custo por conversa — "
-        "não por lead qualificado, agendamento ou fechamento. Validar objetivo e "
-        "rastreio pós-conversa antes de escalar verba."
-    ))
+    items.append(dict(
+        title="A conversão é conversa no WhatsApp, não lead qualificado",
+        detail=(f"Formulário e pixel zerados: as {W['conv']:.0f} conversões do período são conversas "
+                f"iniciadas (CTWA). O CPL de {brl(W['cpl'])} é custo por conversa, não por agendamento ou venda."),
+        action=(f"Cruzar as {W['conv']:.0f} conversas com o CRM/WhatsApp e medir quantas viraram agendamento "
+                "e venda. Sem esse número, o CPL não diz se a verba está rentável."),
+        cert="confirmado", prio=1))
 
-# 2. melhor vs pior criativo
+# 2. Verba desbalanceada entre criativos
 valid = [(n, a) for n, a in cre_aggs if a["conv"] > 0]
 if len(valid) >= 2:
     best_n, best = valid[0]
     worst_n, worst = valid[-1]
     if worst["cpl"] > best["cpl"] * 1.2:
-        msg = (f"{best_n} fecha o período com o melhor CPL ({brl(best['cpl'])}) "
-               f"vs. {brl(worst['cpl'])} do {worst_n}.")
+        det = (f"{best_n}: CPL {brl(best['cpl'])} com {brl(best['spend'])} de verba. "
+               f"{worst_n}: CPL {brl(worst['cpl'])} com {brl(worst['spend'])}.")
         if worst["spend"] > best["spend"]:
-            msg += (f" Mesmo assim, o pior criativo levou mais verba "
-                    f"({brl(worst['spend'])} vs. {brl(best['spend'])}) — realocar.")
-        findings.append(("Desequilíbrio entre criativos.", msg))
+            det += " O criativo mais caro por conversa está levando mais verba."
+        items.append(dict(
+            title="Verba desbalanceada entre criativos",
+            detail=det,
+            action=(f"Migrar verba aos poucos do «{worst_n}» para o «{best_n}». Antes de cortar, confirmar que "
+                    f"o CPL melhor sustenta: é amostra de {best['conv']:.0f} conversas, ainda pequena."),
+            cert="validar", prio=1))
 
-# 3. week over week
+# 3. Pouca diversidade criativa / fadiga
+if len(cre_aggs) <= 2:
+    items.append(dict(
+        title=f"Só {len(cre_aggs)} criativo(s) no ar — base criativa estreita",
+        detail=("Pouca variação limita o aprendizado do algoritmo e acelera fadiga de público "
+                "(frequência sobe e o CPM encarece)."),
+        action=("Subir 2 a 3 criativos novos com ângulos distintos (oferta, prova social, antes/depois) "
+                "para dar material de teste e otimização."),
+        cert="validar", prio=2))
+
+# 4. Tendência vs período anterior
 if P and P["conv"] > 0:
-    parts = []
-    dc, _ = delta_label(W["cpc"], P["cpc"]); parts.append(f"CPC {dc}")
-    dl, _ = delta_label(W["cpl"], P["cpl"]); parts.append(f"CPL {dl}")
-    dconv = "estável" if abs(W["conv"]-P["conv"]) <= 1 else (
-        f"{'subiu' if W['conv']>P['conv'] else 'caiu'} {abs(W['conv']-P['conv']):.0f}")
-    findings.append((
-        f"{L['comp_title']}.",
-        f"CPC saiu de {brl(P['cpc'])} para {brl(W['cpc'])}; "
-        f"CPL de {brl(P['cpl'])} para {brl(W['cpl'])}; "
-        f"conversas: {dconv} ({P['conv']:.0f} → {W['conv']:.0f})."
-    ))
+    dcpl, _ = delta_label(W["cpl"], P["cpl"])
+    piora = W["cpl"] > P["cpl"] * 1.1
+    items.append(dict(
+        title=f"Tendência vs {unidade} anterior",
+        detail=(f"CPL {brl(P['cpl'])} → {brl(W['cpl'])} ({dcpl}) · conversas {P['conv']:.0f} → {W['conv']:.0f} · "
+                f"CPC {brl(P['cpc'])} → {brl(W['cpc'])} · investimento {brl(P['spend'])} → {brl(W['spend'])}."),
+        action=("CPL em alta: investigar criativo/público antes de manter ou subir verba." if piora else None),
+        cert="confirmado", prio=2 if piora else 3))
 
-# 4. volume baixo
-if W["conv"] < 20:
-    findings.append((
-        f"Volume baixo — leia por {L['unit']}, não por dia.",
-        f"São {W['conv']:.0f} conversas no período (~{W['conv']/per_days:.1f}/dia). "
-        "Oscilações diárias de CPL são ruído de amostra, não tendência."
-    ))
-
-# 5. CPM alto
+# 5. CPM elevado
 if W["cpm"] > 70:
-    findings.append((
-        "CPM elevado.",
-        f"CPM de {brl(W['cpm'])} sugere público estreito ou saturação. "
-        "Acompanhar frequência e considerar ampliação se confirmar."
-    ))
+    items.append(dict(
+        title=f"CPM elevado ({brl(W['cpm'])})",
+        detail="Pode ser público estreito/saturado ou leilão concorrido — a entrega sozinha não distingue a causa.",
+        action=("Checar frequência e tamanho de público; se a frequência estiver alta, ampliar público "
+                "ou renovar criativo."),
+        cert="validar", prio=2))
+
+# 6. Volume baixo (cuidado estatístico)
+if W["conv"] < 20:
+    items.append(dict(
+        title=f"Volume baixo ({W['conv']:.0f} conversas no período)",
+        detail=(f"Cerca de {W['conv']/per_days:.1f} conversa(s) por dia. Oscilação diária é ruído de "
+                "amostra, não tendência."),
+        action="Não cortar criativo nem mexer em verba por um dia ruim; decidir sempre por período fechado.",
+        cert="confirmado", prio=3))
+
+# 7. Escala depende de capacidade de atendimento
+if W["conv"] >= 8:
+    items.append(dict(
+        title="Escalar verba depende da capacidade de atendimento",
+        detail=("Mais verba só compensa se a recepção responde rápido e converte as conversas. "
+                "Conversa não respondida é dinheiro perdido."),
+        action=("Antes de subir o orçamento, confirmar com a operação o tempo de resposta e o gargalo "
+                "de atendimento no WhatsApp."),
+        cert="validar", prio=2))
 
 # ----------------------------- HTML/PDF -----------------------------
 CSS = """
@@ -207,6 +232,20 @@ tbody tr.lose td { background: #fcf2f1; }
 .finding { margin: 0 0 11px 0; padding-left: 14px; border-left: 3px solid #1F3A5F; }
 .finding .ft { font-weight: 700; color: #1F3A5F; font-size: 10pt; }
 .small { font-size: 8.2pt; color: #6b7785; }
+.legend { font-size: 8pt; color: #6b7785; margin: 0 0 11px 0; line-height: 1.7; }
+.badge { font-size: 6.8pt; font-weight: 700; padding: 1px 6px; border-radius: 9px; white-space: nowrap; }
+.badge.confirmado { background: #e3efe3; color: #2c6e2c; }
+.badge.validar { background: #faf0d6; color: #8a5d00; }
+.diag { margin: 0 0 9px 0; padding-left: 13px; border-left: 3px solid #2c6e2c; }
+.diag.validar { border-left-color: #C9A227; }
+.diag .dt { font-weight: 700; color: #1F3A5F; font-size: 9.8pt; }
+.diag .dd { font-size: 9.3pt; color: #2b333d; }
+.task { margin: 0 0 7px 0; font-size: 9.4pt; line-height: 1.45; }
+.task .chk { color: #1F3A5F; font-weight: 700; margin-right: 6px; }
+.prio { font-size: 6.8pt; font-weight: 800; color: #fff; padding: 1px 5px; border-radius: 3px; margin-right: 6px; }
+.prio.p1 { background: #a83228; }
+.prio.p2 { background: #b8860b; }
+.prio.p3 { background: #6b7785; }
 """
 
 def row_html(label, a, cls=""):
@@ -252,9 +291,29 @@ if W["leads"] == 0 and W["conv"] > 0:
         'lead qualificado, agendamento ou fechamento. Validar objetivo e rastreio '
         'pós-conversa antes de escalar verba.</p></div>')
 
-find_html = ""
-for i, (t, b) in enumerate(findings, 1):
-    find_html += f'<div class="finding"><p><span class="ft">{i}. {t}</span><br>{b}</p></div>'
+PRIO_LBL = {1: "P1", 2: "P2", 3: "P3"}
+def cert_badge(c):
+    return ('<span class="badge confirmado">Confirmado</span>' if c == "confirmado"
+            else '<span class="badge validar">Validar</span>')
+
+legend = ('<p class="legend">'
+          '<span class="badge confirmado">Confirmado</span> = 100% nos dados &nbsp;·&nbsp; '
+          '<span class="badge validar">Validar</span> = precisa de confirmação humana (CRM, operação, frequência)'
+          '<br>Prioridade: <span class="prio p1">P1</span> alta &nbsp; '
+          '<span class="prio p2">P2</span> média &nbsp; <span class="prio p3">P3</span> baixa</p>')
+
+diag_html = ""
+for it in items:
+    cls = "diag" if it["cert"] == "confirmado" else "diag validar"
+    diag_html += (f'<div class="{cls}"><p><span class="dt">{it["title"]}</span> '
+                  f'{cert_badge(it["cert"])}<br><span class="dd">{it["detail"]}</span></p></div>')
+
+acts = sorted([it for it in items if it.get("action")], key=lambda it: it["prio"])
+task_html = ""
+for it in acts:
+    task_html += (f'<div class="task"><span class="chk">&#9744;</span>'
+                  f'<span class="prio p{it["prio"]}">{PRIO_LBL[it["prio"]]}</span>'
+                  f'{it["action"]} {cert_badge(it["cert"])}</div>')
 
 html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <style>{CSS}</style></head><body>
@@ -271,8 +330,11 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <table><thead>{head}</thead><tbody>{cons}{cre_html}</tbody></table>
 <p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>
 {(f'<h2><span class="num">02</span>{L["comp_title"]}</h2>' + wow_html) if wow_html else ''}
-<h2><span class="num">{'03' if wow_html else '02'}</span>Achados e ações</h2>
-{find_html}
+<h2><span class="num">{'03' if wow_html else '02'}</span>Diagnóstico — visão de gestor de tráfego</h2>
+{legend}
+{diag_html}
+<h2><span class="num">{'04' if wow_html else '03'}</span>Plano de ação priorizado</h2>
+{task_html}
 </body></html>"""
 
 outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
@@ -298,15 +360,20 @@ body_rows = (
     f"<tr><td><b>Conversas (WhatsApp)</b></td><td>{W['conv']:.0f}</td></tr>"
     f"<tr><td><b>CPL (custo/conversa)</b></td><td>{brl(W['cpl']) if W['conv'] else '—'}</td></tr>"
 )
-top_findings = "".join(f"<li>{t} {b}</li>" for t, b in findings[:3])
+def cert_txt(c): return "Confirmado" if c == "confirmado" else "Validar"
+email_acts = "".join(
+    f'<li style="margin-bottom:6px"><b>{PRIO_LBL[it["prio"]]}</b> · {it["action"]} '
+    f'<span style="font-size:11px;color:{"#2c6e2c" if it["cert"]=="confirmado" else "#8a5d00"}">'
+    f'[{cert_txt(it["cert"])}]</span></li>' for it in acts[:4])
 body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#1d2530;font-size:14px;line-height:1.55">
 <p>Olá,</p>
 <p>Segue o resumo de Meta Ads da Tekoan referente a <b>{period_str}</b> {L["per_suffix"]}. PDF completo em anexo.</p>
 <table style="border-collapse:collapse;font-size:14px;margin:8px 0 14px">
 {body_rows}
 </table>
-<p style="margin:0 0 4px"><b>Destaques:</b></p>
-<ul style="margin:0 0 14px;padding-left:18px">{top_findings}</ul>
+<p style="margin:0 0 4px"><b>Ações prioritárias:</b></p>
+<ul style="margin:0 0 14px;padding-left:18px">{email_acts}</ul>
+<p style="font-size:12px;color:#6b7785;margin:0 0 12px">P1 alta · P2 média · P3 baixa &nbsp;|&nbsp; [Confirmado] = 100% nos dados · [Validar] = precisa de confirmação humana. Diagnóstico completo e checklist no PDF.</p>
 <p style="color:#6b7785;font-size:12px">Gerado automaticamente em {gen_str}. CPL = custo por conversa no WhatsApp (não há lead de formulário/pixel nesta conta).</p>
 </div>"""
 
@@ -315,9 +382,9 @@ lines = [f"Resumo Meta Ads Tekoan — {L['subj']}", "",
          f"Investimento: {brl(W['spend'])}",
          f"CPC: {brl(W['cpc'])}  |  CTR: {pct2(W['ctr'])}",
          f"Conversas (WhatsApp): {W['conv']:.0f}",
-         f"CPL (custo/conversa): {brl(W['cpl']) if W['conv'] else '—'}", "", "Destaques:"]
-for t, b in findings[:3]:
-    lines.append(f"- {t} {b}")
+         f"CPL (custo/conversa): {brl(W['cpl']) if W['conv'] else '—'}", "", "Ações prioritárias:"]
+for it in acts[:4]:
+    lines.append(f"- [{PRIO_LBL[it['prio']]}] {it['action']} ({cert_txt(it['cert'])})")
 lines += ["", "PDF completo em anexo."]
 body_text = "\n".join(lines)
 
