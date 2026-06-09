@@ -16,6 +16,7 @@ from pathlib import Path
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 SENDER_EMAIL  = os.environ.get("SENDER_EMAIL", "bonamini.enzo1@gmail.com")
 TO            = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
+ALERT_TO      = [a.strip() for a in os.environ.get("ALERT_TO", "enzo@tekoan.com.br").split(",") if a.strip()]
 
 
 def brevo_send(to_list, subject, html, text=None, attachment_path=None):
@@ -90,9 +91,19 @@ if __name__ == "__main__":
     except Exception:
         tb = traceback.format_exc()
         print("FALHA:\n" + tb)
+        nome = "mensal" if os.environ.get("REPORT_MODE") == "monthly" else "semanal"
         try:
-            brevo_send([SENDER_EMAIL], "[Tekoan][FALHA] relatorio semanal Meta Ads",
-                       "<pre>" + tb.replace("<", "&lt;") + "</pre>")
+            brevo_send(ALERT_TO,
+                       f"[Tekoan][FALHA] Relatório {nome} de Meta Ads NÃO foi enviado",
+                       "<div style=\"font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1d2530\">"
+                       f"<p>O relatório <b>{nome}</b> de Meta Ads da Tekoan <b>falhou e não foi enviado</b> "
+                       "nesta execução automática.</p>"
+                       "<p>Causa provável (verificar): Windsor indisponível, chave/limite do Brevo, "
+                       "restrição de IP reativada, ou rede do ambiente fora de \"Completo\". "
+                       "Detalhe técnico abaixo.</p>"
+                       "<pre style=\"font-size:11px;background:#f5f5f5;padding:8px;border-radius:4px\">"
+                       + tb.replace("<", "&lt;") + "</pre></div>")
+            print("Alerta de falha enviado para:", ", ".join(ALERT_TO))
         except Exception as ex2:
-            print("Tambem falhou ao enviar diagnostico:", ex2)
+            print("Tambem falhou ao enviar o alerta:", ex2)
         raise
