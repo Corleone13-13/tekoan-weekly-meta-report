@@ -1,47 +1,54 @@
 #!/usr/bin/env python3
-"""Variante da Routine para ambiente cloud: os dados do Windsor sao obtidos pelo
-AGENTE via conector MCP (o endpoint REST connectors.windsor.ai retorna 403 a
-partir do IP do datacenter) e salvos em um arquivo JSON. Este script LE esse
-arquivo, monta rows.json, gera o relatorio e envia por e-mail.
+"""Routine cloud Tekoan Meta Ads — envio via API HTTPS do Brevo (SMTP e
+bloqueado no sandbox). Os dados do Windsor sao obtidos pelo AGENTE via conector
+MCP (REST retorna 403) e salvos em um arquivo JSON; este script LE esse arquivo,
+gera o relatorio e envia por e-mail.
 
 Uso:  python3 run_from_json.py <windsor.json>
-Aceita os formatos {"result":[...]}, {"data":[...]} ou [...].
+Aceita {"result":[...]}, {"data":[...]} ou [...].
 
-Credenciais por variavel de ambiente: SMTP_USER, SMTP_PASS, MAIL_TO. DRY=1 pula envio.
+Variaveis de ambiente: BREVO_API_KEY, MAIL_TO (virgula-separado),
+SENDER_EMAIL (opcional, default bonamini.enzo1@gmail.com). DRY=1 pula o envio.
 """
-import os, sys, json, subprocess, smtplib, ssl, traceback
+import os, sys, json, base64, subprocess, traceback, urllib.request, urllib.error
 from pathlib import Path
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 
-SMTP_USER = os.environ["SMTP_USER"]
-SMTP_PASS = os.environ["SMTP_PASS"]
-TO        = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+SENDER_EMAIL  = os.environ.get("SENDER_EMAIL", "bonamini.enzo1@gmail.com")
+TO            = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
 
 
-def smtp_send(to_list, msg):
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=90) as s:
-        s.starttls(context=ssl.create_default_context())
-        s.login(SMTP_USER, SMTP_PASS)
-        s.sendmail(SMTP_USER, to_list, msg.as_string())
-
-
-def send_plain(to_list, subject, text):
-    m = MIMEText(text, "plain", "utf-8")
-    m["From"] = SMTP_USER; m["To"] = ", ".join(to_list); m["Subject"] = subject
-    smtp_send(to_list, m)
+def brevo_send(to_list, subject, html, text=None, attachment_path=None):
+    body = {
+        "sender": {"name": "Tekoan Reports", "email": SENDER_EMAIL},
+        "to": [{"email": a} for a in to_list],
+        "subject": subject,
+        "htmlContent": html,
+    }
+    if text:
+        body["textContent"] = text
+    if attachment_path:
+        p = Path(attachment_path)
+        body["attachment"] = [{"content": base64.b64encode(p.read_bytes()).decode(),
+                               "name": p.name}]
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(body).encode(),
+        headers={"api-key": BREVO_API_KEY, "content-type": "application/json",
+                 "accept": "application/json"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=45) as r:
+        return r.status, r.read().decode()
 
 
 def main():
+    if not BREVO_API_KEY:
+        raise SystemExit("BREVO_API_KEY vazio.")
     if not TO:
         raise SystemExit("MAIL_TO vazio.")
     src = Path(sys.argv[1] if len(sys.argv) > 1 else "windsor.json")
     payload = json.loads(src.read_text())
-    if isinstance(payload, dict):
-        raw = payload.get("result") or payload.get("data") or []
-    else:
-        raw = payload
+    raw = (payload.get("result") or payload.get("data") or []) if isinstance(payload, dict) else payload
     raw = [x for x in raw if x.get("ad_name")]
     if not raw:
         raise SystemExit("Sem linhas de anuncio no JSON do Windsor — nao enviar e-mail vazio.")
@@ -65,28 +72,14 @@ def main():
         print(f"DRY-RUN ok | assunto: {e['subject']} | PDF: {'sim' if has_pdf else 'NAO (fallback HTML)'}")
         return
 
-    msg = MIMEMultipart("mixed")
-    msg["From"] = f"Tekoan Reports <{SMTP_USER}>"
-    msg["To"] = ", ".join(TO)
-    msg["Subject"] = e["subject"]
     if has_pdf:
-        alt = MIMEMultipart("alternative")
-        alt.attach(MIMEText(e["body_text"], "plain", "utf-8"))
-        alt.attach(MIMEText(e["body_html"], "html", "utf-8"))
-        msg.attach(alt)
-        part = MIMEApplication(pdf.read_bytes(), _subtype="pdf")
-        part.add_header("Content-Disposition", "attachment", filename=pdf.name)
-        msg.attach(part)
+        st, resp = brevo_send(TO, e["subject"], e["body_html"], e["body_text"], str(pdf))
         mode = "com PDF anexo"
     else:
         full_html = Path(e["report_html"]).read_text()
-        alt = MIMEMultipart("alternative")
-        alt.attach(MIMEText(e["body_text"], "plain", "utf-8"))
-        alt.attach(MIMEText(full_html, "html", "utf-8"))
-        msg.attach(alt)
+        st, resp = brevo_send(TO, e["subject"], full_html, e["body_text"])
         mode = "relatorio no corpo (sem PDF)"
-    smtp_send(TO, msg)
-    print(f"EMAIL ENVIADO para {', '.join(TO)} | {mode} | assunto: {e['subject']}")
+    print(f"EMAIL ENVIADO para {', '.join(TO)} | {mode} | Brevo HTTP {st} {resp}")
 
 
 if __name__ == "__main__":
@@ -96,8 +89,8 @@ if __name__ == "__main__":
         tb = traceback.format_exc()
         print("FALHA:\n" + tb)
         try:
-            send_plain([SMTP_USER], "[Tekoan][FALHA] relatorio semanal Meta Ads",
-                       "Falha ao gerar/enviar.\n\n" + tb)
+            brevo_send([SENDER_EMAIL], "[Tekoan][FALHA] relatorio semanal Meta Ads",
+                       "<pre>" + tb.replace("<", "&lt;") + "</pre>")
         except Exception as ex2:
             print("Tambem falhou ao enviar diagnostico:", ex2)
         raise
