@@ -10,7 +10,7 @@ Aceita {"result":[...]}, {"data":[...]} ou [...].
 Variaveis de ambiente: BREVO_API_KEY, MAIL_TO (virgula-separado),
 SENDER_EMAIL (opcional, default bonamini.enzo1@gmail.com). DRY=1 pula o envio.
 """
-import os, sys, json, base64, subprocess, traceback, urllib.request, urllib.error
+import os, sys, json, base64, hashlib, subprocess, traceback, urllib.request, urllib.error
 from pathlib import Path
 
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
@@ -101,6 +101,16 @@ def main():
         print(f"DRY-RUN ok | assunto: {e['subject']} | PDF: {'sim' if has_pdf else 'NAO (fallback HTML)'}")
         return
 
+    # Trava de idempotencia (fail-open): impede envio DUPLICADO se o agente da Routine
+    # rodar o bloco de envio duas vezes na MESMA sessao. O marcador fica em /tmp/tekoan
+    # (efemero por sessao) e e chaveado pelo assunto, que inclui periodo+modo — logo um
+    # relatorio de outro dia/semana/mes NUNCA e bloqueado. So e gravado APOS envio com
+    # sucesso, entao uma falha de envio jamais impede uma nova tentativa.
+    marker = Path(f".sent_{hashlib.md5(e['subject'].encode()).hexdigest()}")
+    if marker.exists():
+        print(f"JA ENVIADO nesta sessao — pulando envio duplicado | assunto: {e['subject']}")
+        return
+
     if has_pdf:
         st, resp = brevo_send(TO, e["subject"], e["body_html"], e["body_text"], str(pdf))
         mode = "com PDF anexo"
@@ -108,6 +118,10 @@ def main():
         full_html = Path(e["report_html"]).read_text()
         st, resp = brevo_send(TO, e["subject"], full_html, e["body_text"])
         mode = "relatorio no corpo (sem PDF)"
+    try:
+        marker.write_text(e["subject"])
+    except Exception:
+        pass  # marcador e best-effort; nunca deve quebrar o fluxo de envio
     print(f"EMAIL ENVIADO para {', '.join(TO)} | {mode} | Brevo HTTP {st} {resp}")
 
 
