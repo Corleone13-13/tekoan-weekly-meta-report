@@ -60,13 +60,39 @@ def main():
         "clicks": x.get("clicks") or 0,
         "conversations": x.get("actions_onsite_conversion_messaging_conversation_started_7d") or 0,
         "leads": (x.get("actions_lead") or 0) + (x.get("actions_offsite_conversion_fb_pixel_lead") or 0),
+        # funil de mensagens (aditivos; ausentes em fetch antigo → 0, nunca quebra)
+        "first_reply": x.get("actions_onsite_conversion_messaging_first_reply") or 0,
+        "blocks": x.get("actions_onsite_conversion_messaging_block") or 0,
     } for x in raw]
     Path("rows.json").write_text(json.dumps(rows, ensure_ascii=False))
+
+    # alcance/frequência por criativo (OPCIONAL): se o agente salvou windsor_period.json
+    # (fetch agregado SEM data: ad_name, reach, frequency, cpp), transformamos em period.json.
+    # Reach/frequência não são aditivos por dia, por isso vêm desse fetch à parte.
+    period_arg = []
+    psrc = Path("windsor_period.json")
+    if psrc.exists():
+        try:
+            ppayload = json.loads(psrc.read_text())
+            praw = (ppayload.get("result") or ppayload.get("data") or []) \
+                if isinstance(ppayload, dict) else ppayload
+            pmap = {}
+            for x in praw:
+                n = x.get("ad_name")
+                if not n:
+                    continue
+                pmap[n] = {"ad_name": n, "reach": x.get("reach") or 0,
+                           "frequency": x.get("frequency") or 0, "cpp": x.get("cpp") or 0}
+            if pmap:
+                Path("period.json").write_text(json.dumps(list(pmap.values()), ensure_ascii=False))
+                period_arg = ["--period-data", "period.json"]
+        except Exception as ex:
+            print("WARN: windsor_period.json ignorado:", ex)
 
     mode = os.environ.get("REPORT_MODE", "weekly")
     subprocess.run(["python3", "generate_report.py", "rows.json",
                     "--outdir", "./out", "--recipient", ",".join(TO),
-                    "--mode", mode], check=True)
+                    "--mode", mode] + period_arg, check=True)
     e = json.loads(Path("out/email.json").read_text())
     pdf = Path(e["attachment"]) if e.get("attachment") else None
     has_pdf = bool(pdf and pdf.exists())

@@ -35,13 +35,17 @@ def agg(rows):
     cl  = sum(r["clicks"] for r in rows)
     cv  = sum(r["conversations"] for r in rows)
     ld  = sum(r.get("leads", 0) for r in rows)
+    fr  = sum(r.get("first_reply", 0) for r in rows)
+    blk = sum(r.get("blocks", 0) for r in rows)
     return dict(
         spend=sp, impressions=imp, clicks=cl, conv=cv, leads=ld,
+        first_reply=fr, blocks=blk,
         cpm=sp / imp * 1000 if imp else 0,
         cpc=sp / cl if cl else 0,
         ctr=cl / imp if imp else 0,
         convr=cv / cl if cl else 0,
         cpl=sp / cv if cv else 0,
+        reply_rate=fr / cv if cv else 0,
     )
 
 def delta_label(cur, prev, lower_is_better=True):
@@ -59,6 +63,8 @@ ap.add_argument("data")
 ap.add_argument("--outdir", default=".")
 ap.add_argument("--recipient", default="")
 ap.add_argument("--mode", default="weekly", choices=["weekly", "monthly"])
+ap.add_argument("--period-data", default="", dest="period_data",
+                help="JSON opcional com reach/frequency/cpp por criativo no período (nível agregado, sem data).")
 args = ap.parse_args()
 
 rows = json.loads(Path(args.data).read_text())
@@ -66,6 +72,9 @@ for r in rows:
     for k in ("spend", "impressions", "clicks", "conversations"):
         r[k] = float(r.get(k) or 0)
     r["leads"] = float(r.get("leads") or 0)
+    # funil de mensagens (aditivos; ausentes em dados antigos → 0, nunca quebra)
+    r["first_reply"] = float(r.get("first_reply") or 0)
+    r["blocks"] = float(r.get("blocks") or 0)
 
 dates = sorted({r["date"] for r in rows})
 if not dates:
@@ -115,6 +124,31 @@ cre_aggs = sorted(
     [(name, agg(rs)) for name, rs in creatives.items()],
     key=lambda x: (x[1]["cpl"] if x[1]["conv"] else 9e9),
 )
+
+# alcance/frequência por criativo (nível período, fetch agregado sem data) — OPCIONAL.
+# Reach e frequência não são aditivos por dia (a mesma pessoa repete), por isso vêm
+# de um fetch agregado à parte. Se o arquivo não existir/for inválido, o bloco some
+# e o relatório segue normal — zero risco de crash.
+period_map = {}
+if args.period_data and Path(args.period_data).exists():
+    try:
+        for x in json.loads(Path(args.period_data).read_text()):
+            n = x.get("ad_name")
+            if not n:
+                continue
+            period_map[n] = dict(
+                reach=float(x.get("reach") or 0),
+                frequency=float(x.get("frequency") or 0),
+                cpp=float(x.get("cpp") or 0))
+    except Exception as _e:
+        print("WARN: period-data ignorado:", _e)
+        period_map = {}
+
+def thousands(v):
+    return f"{v:,.0f}".replace(",", ".")
+
+def freqx(v):
+    return f"{v:.2f}x".replace(".", ",")
 
 gen_str = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
 
@@ -198,6 +232,47 @@ if W["conv"] >= 8:
         action=("Antes de subir o orçamento, confirmar com a operação o tempo de resposta e o gargalo "
                 "de atendimento no WhatsApp."),
         cert="validar", prio=2))
+
+# 8. Conversas que não evoluem (funil de mensagens) — só se houver dado de 1ª resposta
+if W["first_reply"] > 0 and W["conv"] >= 5 and W["reply_rate"] < 0.7:
+    items.append(dict(
+        title=f"Parte das conversas não evolui (resposta em {pct(W['reply_rate'])})",
+        detail=(f"Das {W['conv']:.0f} conversas iniciadas, {W['first_reply']:.0f} registraram primeira resposta. "
+                "Conversa iniciada que não recebe resposta é verba paga que morre no “oi”."),
+        action=("Verificar com a recepção o tempo de resposta no WhatsApp: conversa parada é a maior "
+                "perda invisível e derruba o retorno real da verba."),
+        cert="validar", prio=1))
+
+# 9. Bloqueios após contato — só se houver
+if W["blocks"] > 0:
+    items.append(dict(
+        title=f"{W['blocks']:.0f} bloqueio(s) após o contato",
+        detail=("Pessoas que bloquearam a conversa depois do anúncio. Em volume, sinaliza desalinhamento "
+                "entre a promessa do criativo e o que a recepção entrega na abertura."),
+        action="Se recorrer, alinhar a promessa do criativo com o primeiro contato da recepção.",
+        cert="validar", prio=2))
+
+# 10. Frequência (fadiga real vs. público fresco) — só com dado de período
+freqs = [(n, period_map[n]) for n, _ in cre_aggs
+         if n in period_map and period_map[n]["frequency"] > 0]
+if freqs:
+    worst_fn, worst_fp = max(freqs, key=lambda t: t[1]["frequency"])
+    fmax = worst_fp["frequency"]
+    if fmax >= 2.5:
+        items.append(dict(
+            title=f"Frequência alta em «{worst_fn}» ({freqx(fmax)})",
+            detail=("A mesma pessoa já viu o anúncio muitas vezes no período. Acima de ~2,5x costuma "
+                    "indicar fadiga: o CTR cai e o CPM encarece."),
+            action=f"Renovar o criativo «{worst_fn}» ou ampliar o público para diluir a repetição.",
+            cert="validar", prio=2))
+    elif W["cpm"] > 70 and fmax < 1.6:
+        items.append(dict(
+            title="Custo alto não é saturação: o público está fresco",
+            detail=(f"A maior frequência do período é {freqx(fmax)} (cada pessoa viu pouco). Logo o CPM/CPP "
+                    "alto vem de público estreito ou leilão concorrido, não de fadiga de criativo."),
+            action=("Em vez de trocar criativo, ampliar ou abrir o público e revisar segmentação e "
+                    "estratégia de lance."),
+            cert="validar", prio=2))
 
 # ----------------------------- HTML/PDF -----------------------------
 CSS = """
@@ -315,6 +390,49 @@ for it in acts:
                   f'<span class="prio p{it["prio"]}">{PRIO_LBL[it["prio"]]}</span>'
                   f'{it["action"]} {cert_badge(it["cert"])}</div>')
 
+# funil de mensagens (linha abaixo do consolidado) — só com dado de 1ª resposta
+funnel_line = ""
+if W["first_reply"] > 0:
+    blk_txt = f' · {W["blocks"]:.0f} bloqueio(s)' if W["blocks"] > 0 else ""
+    funnel_line = (f'<p class="small">Funil do período: {W["clicks"]:.0f} cliques → '
+                   f'{W["conv"]:.0f} conversas → {W["first_reply"]:.0f} com primeira resposta '
+                   f'({pct(W["reply_rate"])} das conversas){blk_txt}.</p>')
+
+# tabela de alcance e frequência por criativo — só com dado de período
+reach_html = ""
+if period_map:
+    rows_r = ""
+    for n, _a in cre_aggs:
+        pm = period_map.get(n)
+        if not pm or pm["reach"] <= 0:
+            continue
+        rows_r += (f'<tr><td>{n}</td><td>{thousands(pm["reach"])}</td>'
+                   f'<td>{freqx(pm["frequency"])}</td><td>{brl(pm["cpp"])}</td></tr>')
+    if rows_r:
+        reach_html = ('<table><thead><tr><th>Criativo</th><th>Alcance</th>'
+                      '<th>Frequência</th><th>Custo/mil pessoas</th></tr></thead><tbody>'
+                      + rows_r + '</tbody></table>'
+                      '<p class="small">Alcance = pessoas únicas atingidas. Frequência = quantas vezes, '
+                      'em média, cada pessoa viu o anúncio. CPP = custo por mil pessoas alcançadas '
+                      '(diferente do CPM, que conta impressões repetidas).</p>')
+
+# montagem das seções com numeração dinâmica (evita números fixos quando há blocos opcionais)
+def secnum(k):
+    return f'<span class="num">{k:02d}</span>'
+
+sections, k = [], 1
+sections.append(f'<h2>{secnum(k)}Consolidado e por criativo</h2>'
+                f'<table><thead>{head}</thead><tbody>{cons}{cre_html}</tbody></table>'
+                '<p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>'
+                + funnel_line); k += 1
+if reach_html:
+    sections.append(f'<h2>{secnum(k)}Alcance e frequência</h2>' + reach_html); k += 1
+if wow_html:
+    sections.append(f'<h2>{secnum(k)}{L["comp_title"]}</h2>' + wow_html); k += 1
+sections.append(f'<h2>{secnum(k)}Diagnóstico — visão de gestor de tráfego</h2>' + legend + diag_html); k += 1
+sections.append(f'<h2>{secnum(k)}Plano de ação priorizado</h2>' + task_html); k += 1
+body_sections = "\n".join(sections)
+
 html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <style>{CSS}</style></head><body>
 <div class="top">
@@ -326,15 +444,7 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <strong>Gerado em:</strong> {gen_str} &nbsp;·&nbsp;<strong>Fonte:</strong> Meta Ads API via Windsor.ai</p>
 </div>
 {lead_block}
-<h2><span class="num">01</span>Consolidado e por criativo</h2>
-<table><thead>{head}</thead><tbody>{cons}{cre_html}</tbody></table>
-<p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>
-{(f'<h2><span class="num">02</span>{L["comp_title"]}</h2>' + wow_html) if wow_html else ''}
-<h2><span class="num">{'03' if wow_html else '02'}</span>Diagnóstico — visão de gestor de tráfego</h2>
-{legend}
-{diag_html}
-<h2><span class="num">{'04' if wow_html else '03'}</span>Plano de ação priorizado</h2>
-{task_html}
+{body_sections}
 </body></html>"""
 
 outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
@@ -360,6 +470,9 @@ body_rows = (
     f"<tr><td><b>Conversas (WhatsApp)</b></td><td>{W['conv']:.0f}</td></tr>"
     f"<tr><td><b>CPL (custo/conversa)</b></td><td>{brl(W['cpl']) if W['conv'] else '—'}</td></tr>"
 )
+if W["first_reply"] > 0:
+    body_rows += (f"<tr><td><b>Conversas c/ resposta</b></td>"
+                  f"<td>{W['first_reply']:.0f} ({pct(W['reply_rate'])})</td></tr>")
 def cert_txt(c): return "Confirmado" if c == "confirmado" else "Validar"
 email_acts = "".join(
     f'<li style="margin-bottom:6px"><b>{PRIO_LBL[it["prio"]]}</b> · {it["action"]} '
