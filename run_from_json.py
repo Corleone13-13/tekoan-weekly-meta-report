@@ -81,8 +81,25 @@ def main():
                 n = x.get("ad_name")
                 if not n:
                     continue
-                pmap[n] = {"ad_name": n, "reach": x.get("reach") or 0,
-                           "frequency": x.get("frequency") or 0, "cpp": x.get("cpp") or 0}
+                r = x.get("reach") or 0
+                f = x.get("frequency") or 0
+                c = x.get("cpp") or 0
+                if n in pmap:
+                    # Mesmo ad_name = anuncios DISTINTOS com nome identico na Meta
+                    # (ela nao exige nome unico). Antes o segundo sobrescrevia o
+                    # primeiro e subestimava o alcance. Agora consolidamos:
+                    # reach soma; frequency e cpp viram media ponderada por reach.
+                    # Valido porque impressions = freq*reach e spend = cpp*reach/1000
+                    # sao ambos aditivos, logo freq_total = sum(freq*reach)/sum(reach)
+                    # e cpp_total = sum(cpp*reach)/sum(reach).
+                    a = pmap[n]
+                    tot = a["reach"] + r
+                    if tot > 0:
+                        a["frequency"] = (a["frequency"] * a["reach"] + f * r) / tot
+                        a["cpp"] = (a["cpp"] * a["reach"] + c * r) / tot
+                    a["reach"] = tot
+                else:
+                    pmap[n] = {"ad_name": n, "reach": r, "frequency": f, "cpp": c}
             if pmap:
                 Path("period.json").write_text(json.dumps(list(pmap.values()), ensure_ascii=False))
                 period_arg = ["--period-data", "period.json"]
