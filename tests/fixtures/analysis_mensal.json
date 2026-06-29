@@ -1,0 +1,16 @@
+{
+  "trend_verdict": "Mês positivo: o CPL fechou abaixo do mês anterior e o vídeo campeão estabilizou a entrega, com volume ainda modesto.",
+  "insights": [
+    {
+      "title": "Vídeo sustentou o CPL do mês",
+      "detail": "O criativo de vídeo respondeu pela maior parte das conversas baratas e segurou a média do mês mesmo com base criativa enxuta.",
+      "action": "Renovar o gancho do vídeo campeão antes que a frequência suba e encareça a entrega.",
+      "cert": "confirmado",
+      "prio": 1,
+      "novo": true
+    }
+  ],
+  "video_read": "O vídeo campeão manteve hook rate alto o mês inteiro. Vale escalar a produção desse formato e aposentar os estáticos de pior CPL.",
+  "manager_read": "A gestão de ads no mês foi consistente: a verba migrou para o criativo de melhor CPL sem cortes bruscos, a frequência ficou sob controle e não houve desperdício relevante em criativo saturado. O ponto de evolução é ampliar a base criativa para não depender de um único vídeo e reduzir o risco de fadiga no próximo mês.",
+  "silence": false
+}

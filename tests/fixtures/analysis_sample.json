@@ -1,0 +1,24 @@
+{
+  "trend_verdict": "A conta melhorou na margem: o CPL caiu frente ao período anterior e as conversas subiram, mas o volume ainda é pequeno e exige cautela antes de escalar verba.",
+  "insights": [
+    {
+      "title": "Vídeo Hook 1 puxa a conversão do período",
+      "detail": "O criativo de vídeo concentra as conversas mais baratas e sustenta o CPL da conta. O início prende bem e a retenção segura o público até a oferta.",
+      "action": "Manter a verba no Vídeo Hook 1 e produzir duas variações do mesmo gancho para não depender de um único criativo.",
+      "cert": "confirmado",
+      "prio": 1,
+      "novo": true
+    },
+    {
+      "title": "Base criativa ainda estreita",
+      "detail": "Poucos criativos no ar limitam o aprendizado do algoritmo e aceleram a fadiga de público quando a frequência sobe.",
+      "action": "Subir dois ângulos novos (prova social e antes/depois) para dar material de teste.",
+      "cert": "validar",
+      "prio": 2,
+      "novo": false
+    }
+  ],
+  "video_read": "O Vídeo Hook 1 é o campeão: hook rate alto e retenção firme até o meio do vídeo. Replicar o padrão de abertura nos próximos criativos e cortar os primeiros segundos mais lentos.",
+  "manager_read": null,
+  "silence": false
+}
