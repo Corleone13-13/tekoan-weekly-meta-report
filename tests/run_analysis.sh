@@ -32,6 +32,8 @@ want()    { if grep -qF "$1" "$REPORT_HTML"; then echo "  OK  contem: $2"; else 
 absent()  { if grep -qF "$1" "$REPORT_HTML"; then echo "  FALHA  nao deveria conter: $2"; FAILED=1; else echo "  OK  ausente: $2"; fi; }
 # valida que o snapshot out/history_row.json tem as chaves principais
 hwant()   { if python3 -c "import json,sys;d=json.load(open('$HISTORY_ROW'));sys.exit(0 if all(k in d for k in sys.argv[1].split(',')) else 1)" "$1"; then echo "  OK  history_row.json tem chaves: $1"; else echo "  FALHA  history_row.json sem chaves: $1"; FAILED=1; fi; }
+# busca no body_html dentro de out/email.json (resumo executivo do e-mail)
+bwant()   { if python3 -c "import json,sys;sys.exit(0 if sys.argv[1] in json.load(open('$EMAIL_JSON'))['body_html'] else 1)" "$1"; then echo "  OK  body_html contem: $2"; else echo "  FALHA  body_html faltou: $2"; FAILED=1; fi; }
 
 echo "============================================================"
 echo "CASO (a) — analysis_sample.json (weekly): renderiza analise, esconde legado"
@@ -46,6 +48,10 @@ absent "A conversão é conversa no WhatsApp, não lead qualificado" "regra lega
 absent "Volume baixo ("                          "regra legada 6"
 # snapshot de histórico do período atual
 hwant "periodo,modo,spend,conversas,cpl,campeao"  "snapshot gerado"
+# resumo executivo no corpo do e-mail
+bwant "A conta melhorou na margem"               "trend_verdict no body_html"
+bwant "Vídeo Hook 1 puxa a conversão do período" "titulo de insight no body_html"
+bwant "Campeão:"                                  "linha do campeao no body_html"
 
 echo "============================================================"
 echo "CASO (b) — SEM analysis.json (weekly): fallback para regras fixas"
@@ -84,6 +90,10 @@ want "&gt; meta"               "'>' escapado no trend_verdict (&gt;)"
 want "&lt;b&gt;teste&lt;/b&gt;" "tag injetada no detail virou texto escapado"
 absent "< 1%"                  "sequencia crua '< 1%' (nao pode existir)"
 absent "<b>teste</b>"          "tag '<b>teste</b>' literal injetada (nao pode existir)"
+# body_html tambem escapa o texto do agente
+bwant "CTR &lt; 1%"            "trend_verdict escapado no body_html"
+python3 -c "import json,sys;sys.exit(1 if '< 1%' in json.load(open('$EMAIL_JSON'))['body_html'] else 0)" \
+  && echo "  OK  body_html sem sequencia crua '< 1%'" || { echo "  FALHA  body_html tem '< 1%' cru"; FAILED=1; }
 
 echo "============================================================"
 echo "EXTRA — JSON quebrado nao quebra o relatorio (fail-open -> legacy)"

@@ -794,9 +794,35 @@ email_acts = "".join(
     f'<li style="margin-bottom:6px"><b>{PRIO_LBL[it["prio"]]}</b> · {esc(it["action"])} '
     f'<span style="font-size:11px;color:{"#2c6e2c" if it["cert"]=="confirmado" else "#8a5d00"}">'
     f'[{cert_txt(it["cert"])}]</span></li>' for it in acts[:4])
+
+# resumo executivo: tudo que importa LEGÍVEL sem abrir o PDF. Todo texto vindo do
+# agente (trend_verdict, títulos de insight, ação) passa por esc().
+summary_bits = []
+if analysis is not None and analysis.get("trend_verdict"):
+    summary_bits.append('<p style="margin:0 0 10px;background:#fbf7ea;border-left:4px solid #C9A227;'
+                        'padding:8px 12px"><b>Tendência:</b> '
+                        f'{esc(analysis["trend_verdict"])}</p>')
+top_titles = [it["title"] for it in items][:3]
+if top_titles:
+    lis = "".join(f'<li style="margin-bottom:4px">{esc(t)}</li>' for t in top_titles)
+    summary_bits.append('<p style="margin:0 0 4px"><b>Principais pontos:</b></p>'
+                        f'<ul style="margin:0 0 10px;padding-left:18px">{lis}</ul>')
+if champ_name:
+    summary_bits.append(f'<p style="margin:0 0 10px"><b>Campeão:</b> {esc(champ_name)} '
+                        f'· CPL {brl(champ_cpl)}</p>')
+if format_html:
+    _v, _i = fmt_tot["Vídeo"], fmt_tot["Imagem"]
+    _vcpl = _v["spend"] / _v["conv"] if _v["conv"] else 0
+    _icpl = _i["spend"] / _i["conv"] if _i["conv"] else 0
+    summary_bits.append('<p style="margin:0 0 10px"><b>Formato:</b> '
+                        f'Vídeo CPL {brl(_vcpl) if _v["conv"] else "—"} vs '
+                        f'Imagem CPL {brl(_icpl) if _i["conv"] else "—"}</p>')
+exec_summary = "".join(summary_bits)
+
 body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#1d2530;font-size:14px;line-height:1.55">
 <p>Olá,</p>
 <p>Segue o resumo de Meta Ads da Tekoan referente a <b>{period_str}</b> {L["per_suffix"]}. PDF completo em anexo.</p>
+{exec_summary}
 <table style="border-collapse:collapse;font-size:14px;margin:8px 0 14px">
 {body_rows}
 </table>
