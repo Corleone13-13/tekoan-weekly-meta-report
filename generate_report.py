@@ -163,31 +163,24 @@ _BIG = 9e9
 def champion_score(c):
     """Score de campeão de criativo. MENOR é melhor (ordenamos ascendente).
 
-    Lógica:
-      - A base é o CPL (custo por conversa no WhatsApp), que é o que decide
-        rentabilidade. Quanto menor, melhor.
+    Critério: PURO desempenho de conversão (CPL = custo por conversa no
+    WhatsApp), que é o que decide rentabilidade. Quanto menor, melhor.
       - CPL só é confiável com amostra suficiente: exigimos conv >= 3 para usar
-        o CPL "cru". Com conv < 3 (inclui 0), o número é instável, então
-        penalizamos por amostra baixa multiplicando o CPL por (1 + (3 - conv)):
-        2 conversas dobra, 1 conversa triplica. Sem conversa não pode ser
-        campeão, recebe um score altíssimo (vai para o fim do ranking).
-      - Bônus de vídeo: criativos com hook_rate e hold_50 altos prendem atenção
-        e tendem a sustentar performance. Damos um pequeno desconto no score
-        (até cerca de 16%) proporcional a esses dois sinais, sem nunca deixar um
-        criativo de vídeo sem conversa passar à frente de um que converte.
+        o CPL "cru". Com conv 1-2 o número é instável, então penalizamos por
+        amostra baixa multiplicando o CPL por (1 + (3 - conv)): 2 conversas
+        dobra, 1 conversa triplica. Sem conversa não pode ser campeão, recebe
+        um score altíssimo (vai para o fim do ranking).
+
+    Sem ajuste por vídeo: hook_rate/hold NÃO movem o campeão, senão um criativo
+    com CPL pior poderia exibir o 🏆 na frente de quem converte melhor.
+    Engajamento de vídeo é mostrado à parte, na seção "Vídeos".
     """
     conv = c["conv"]
     if conv >= 3 and c["cpl"] > 0:
-        base = c["cpl"]
-    elif conv > 0 and c["cpl"] > 0:
-        base = c["cpl"] * (1 + (3 - conv))   # penalidade por amostra baixa
-    else:
-        return _BIG                          # sem conversa: nunca é campeão
-    if c.get("is_video"):
-        bonus = 1.0 - min(c.get("hook_rate", 0), 0.8) * 0.1 \
-                    - min(c.get("hold_50", 0), 0.8) * 0.1
-        base *= bonus
-    return base
+        return c["cpl"]
+    if conv > 0 and c["cpl"] > 0:
+        return c["cpl"] * (1 + (3 - conv))   # penalidade por amostra baixa
+    return _BIG                              # sem conversa: nunca é campeão
 
 champ_ranked = sorted(cre_aggs, key=lambda x: champion_score(x[1]))
 has_video = any(a["is_video"] for _n, a in cre_aggs)
@@ -509,8 +502,8 @@ for i, (n, a) in enumerate(champ_ranked):
                   f'<td>{a["conv"]:.0f}</td><td>{brl(a["cpl"]) if a["conv"] else "—"}</td>'
                   f'<td>{pct2(a["ctr"])}</td>{freq_td}</tr>')
 ranking_html = (f'<table><thead>{rank_head}</thead><tbody>{rank_rows}</tbody></table>'
-                '<p class="small">Ordenado por desempenho de conversão (CPL com ajuste de '
-                'amostra). 🏆 melhor criativo do período, ⚠️ pior. CPL = Gasto ÷ Conversas.</p>')
+                '<p class="small">Ordenado por desempenho de conversão (CPL, com ajuste para '
+                'amostra pequena). 🏆 melhor criativo do período, ⚠️ pior. CPL = Gasto ÷ Conversas.</p>')
 
 # ----------------------------- vídeos (só se houver criativo de vídeo) -----------------------------
 video_html = ""
