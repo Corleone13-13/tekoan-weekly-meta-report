@@ -289,6 +289,27 @@ def load_analysis(path):
         print("WARN: analysis.json ignorado (fallback para regras fixas):", _e)
         return None
 
+
+def load_history(path):
+    """Lê uma LISTA de snapshots de períodos anteriores (mesmo shape de
+    history_row.json). Retorna lista (possivelmente vazia) ou [] a qualquer
+    erro — fail-open: sem histórico, a seção Evolução simplesmente não aparece."""
+    try:
+        if not path:
+            return []
+        p = Path(path)
+        if not p.exists():
+            return []
+        data = json.loads(p.read_text())
+        if isinstance(data, dict):
+            data = data.get("history") or data.get("rows") or []
+        if not isinstance(data, list):
+            return []
+        return [x for x in data if isinstance(x, dict)]
+    except Exception as _e:
+        print("WARN: history ignorado:", _e)
+        return []
+
 # ----------------------------- load -----------------------------
 ap = argparse.ArgumentParser()
 ap.add_argument("data")
@@ -300,6 +321,9 @@ ap.add_argument("--period-data", default="", dest="period_data",
 ap.add_argument("--analysis", default="",
                 help="JSON opcional de análise escrita pelo agente (analysis.json). "
                      "Ausente/inválido → regras fixas (fallback).")
+ap.add_argument("--history", default="",
+                help="JSON opcional com LISTA de snapshots de períodos anteriores "
+                     "(mesmo shape de out/history_row.json). Ausente/inválido → sem seção Evolução.")
 args = ap.parse_args()
 
 rows = json.loads(Path(args.data).read_text())
@@ -667,6 +691,26 @@ if champ_ranked and champ_ranked[0][1]["conv"] > 0:
     champ_name = champ_ranked[0][0]
     champ_cpl = champ_ranked[0][1]["cpl"]
 
+# ----------------------------- Evolução (histórico de períodos anteriores) -----------------------------
+# Tabela curta dos últimos N períodos a partir do --history (fail-open: lista vazia → sem seção).
+# Destaque no mensal (tendência entre meses); no semanal aparece se houver histórico.
+history = load_history(args.history)
+evolution_html = ""
+if history:
+    hrows = ""
+    for snap in history[-6:]:  # últimos 6 períodos para não inflar
+        per = esc(snap.get("periodo") or "—")
+        sp = snap.get("spend") or 0
+        cvn = snap.get("conversas") or 0
+        cplv = snap.get("cpl") or 0
+        ctrv = snap.get("ctr") or 0
+        hrows += (f'<tr><td>{per}</td><td>{brl(sp)}</td><td>{cvn:.0f}</td>'
+                  f'<td>{brl(cplv) if cvn else "—"}</td><td>{pct2(ctrv)}</td></tr>')
+    evolution_html = ('<table><thead><tr><th>Período</th><th>Gasto</th><th>Conversas</th>'
+                      '<th>CPL</th><th>CTR</th></tr></thead><tbody>' + hrows + '</tbody></table>'
+                      '<p class="small">Evolução dos períodos fechados anteriores. '
+                      'Olhe a direção do CPL e das conversas, não um período isolado.</p>')
+
 # ----------------------------- vídeos (só se houver criativo de vídeo) -----------------------------
 video_html = ""
 if has_video:
@@ -700,6 +744,9 @@ sections.append(f'<h2>{secnum(k)}Consolidado e por criativo</h2>'
                 f'<table><thead>{head}</thead><tbody>{cons}{cre_html}</tbody></table>'
                 '<p class="small">CPL = Investimento ÷ Conversas (WhatsApp). % Conv = Conversas ÷ Cliques.</p>'
                 + funnel_line); k += 1
+# Evolução: tendência entre períodos fechados (destaque no mensal); só com histórico.
+if evolution_html:
+    sections.append(f'<h2>{secnum(k)}Evolução</h2>' + evolution_html); k += 1
 if reach_html:
     sections.append(f'<h2>{secnum(k)}Alcance e frequência</h2>' + reach_html); k += 1
 sections.append(f'<h2>{secnum(k)}Ranking de criativos</h2>' + ranking_html); k += 1

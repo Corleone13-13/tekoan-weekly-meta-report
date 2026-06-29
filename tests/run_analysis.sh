@@ -18,12 +18,13 @@ REPORT_HTML="$ROOT/out/report.html"
 EMAIL_JSON="$ROOT/out/email.json"
 HISTORY_ROW="$ROOT/out/history_row.json"
 
-# prepara o pipeline: copia dados (windsor) e, opcionalmente, a analise.
-setup() {  # $1 = fixture de dados ; $2 = fixture de analise (ou "-" para nenhuma)
+# prepara o pipeline: copia dados (windsor) e, opcionalmente, analise e historico.
+setup() {  # $1 = fixture de dados ; $2 = analise (ou "-") ; $3 = historico (opcional, ou "-")
   cp "$1" "$ROOT/windsor.json"
   cp "$FX/windsor_period_sample.json" "$ROOT/windsor_period.json"
-  rm -f "$ROOT/analysis.json"
+  rm -f "$ROOT/analysis.json" "$ROOT/history.json"
   [ "$2" != "-" ] && cp "$2" "$ROOT/analysis.json"
+  [ "${3:-"-"}" != "-" ] && cp "$3" "$ROOT/history.json"
   rm -f "$ROOT/out/report.html" "$ROOT/out/email.json" "$ROOT/out/history_row.json"
   python3 run_from_json.py windsor.json
 }
@@ -96,6 +97,23 @@ python3 -c "import json,sys;sys.exit(1 if '< 1%' in json.load(open('$EMAIL_JSON'
   && echo "  OK  body_html sem sequencia crua '< 1%'" || { echo "  FALHA  body_html tem '< 1%' cru"; FAILED=1; }
 
 echo "============================================================"
+echo "CASO (f) — MENSAL com --history: seccao Evolucao + 3 periodos"
+echo "============================================================"
+REPORT_MODE=monthly setup "$FX/windsor_sample_video.json" "$FX/analysis_mensal.json" "$FX/history_sample.json"
+want "Evolução"                "secao Evolucao no mensal"
+want "mês Março/2026"          "periodo 1 do historico"
+want "mês Abril/2026"          "periodo 2 do historico"
+want "mês Maio/2026"           "periodo 3 do historico"
+want "Leitura de performance do gestor" "manager_read segue no mensal (nao-regressao)"
+hwant "periodo,modo,spend,conversas,cpl,campeao" "snapshot mensal gerado"
+
+echo "============================================================"
+echo "CASO (g) — sem --history: Evolucao NAO aparece (fallback natural)"
+echo "============================================================"
+REPORT_MODE=weekly setup "$FX/windsor_sample_video.json" "$FX/analysis_sample.json" "-"
+absent ">Evolução</h2>"        "secao Evolucao (nao deve existir sem historico)"
+
+echo "============================================================"
 echo "EXTRA — JSON quebrado nao quebra o relatorio (fail-open -> legacy)"
 echo "============================================================"
 cp "$FX/windsor_sample_video.json" "$ROOT/windsor.json"
@@ -109,8 +127,8 @@ else
 fi
 
 # limpeza dos artefatos transitorios deste teste
-rm -f "$ROOT/analysis.json" "$ROOT/windsor.json" "$ROOT/windsor_period.json" \
-      "$ROOT/rows.json" "$ROOT/period.json"
+rm -f "$ROOT/analysis.json" "$ROOT/history.json" "$ROOT/windsor.json" \
+      "$ROOT/windsor_period.json" "$ROOT/rows.json" "$ROOT/period.json"
 
 echo "============================================================"
 if [ "$FAILED" -eq 0 ]; then echo "TODOS OS CASOS OK (DRY-RUN, zero e-mail enviado)"; exit 0

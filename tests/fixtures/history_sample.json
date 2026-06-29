@@ -1,0 +1,32 @@
+[
+  {
+    "periodo": "mês Março/2026", "modo": "monthly", "gerado_em": "01/04/2026 09:00",
+    "spend": 5200.00, "conversas": 410, "cpl": 12.68, "cpc": 1.42, "cpm": 64.10,
+    "ctr": 0.0151, "reply_rate": 0.62, "blocks": 4,
+    "n_criativos": 5, "n_video": 2, "n_imagem": 3,
+    "campeao": "Vídeo Depoimento", "campeao_cpl": 9.10,
+    "video_vs_imagem": {"video": {"spend": 2800.0, "conv": 250, "cpl": 11.20},
+                         "imagem": {"spend": 2400.0, "conv": 160, "cpl": 15.00}},
+    "trend_verdict": "", "insights_titulos": [], "acao_principal": ""
+  },
+  {
+    "periodo": "mês Abril/2026", "modo": "monthly", "gerado_em": "01/05/2026 09:00",
+    "spend": 5600.00, "conversas": 470, "cpl": 11.91, "cpc": 1.38, "cpm": 61.80,
+    "ctr": 0.0163, "reply_rate": 0.66, "blocks": 3,
+    "n_criativos": 6, "n_video": 3, "n_imagem": 3,
+    "campeao": "Vídeo Hook 1", "campeao_cpl": 8.40,
+    "video_vs_imagem": {"video": {"spend": 3300.0, "conv": 300, "cpl": 11.00},
+                         "imagem": {"spend": 2300.0, "conv": 170, "cpl": 13.53}},
+    "trend_verdict": "", "insights_titulos": [], "acao_principal": ""
+  },
+  {
+    "periodo": "mês Maio/2026", "modo": "monthly", "gerado_em": "01/06/2026 09:00",
+    "spend": 6100.00, "conversas": 540, "cpl": 11.30, "cpc": 1.33, "cpm": 59.20,
+    "ctr": 0.0172, "reply_rate": 0.69, "blocks": 2,
+    "n_criativos": 6, "n_video": 3, "n_imagem": 3,
+    "campeao": "Vídeo Hook 1", "campeao_cpl": 7.90,
+    "video_vs_imagem": {"video": {"spend": 3700.0, "conv": 350, "cpl": 10.57},
+                         "imagem": {"spend": 2400.0, "conv": 190, "cpl": 12.63}},
+    "trend_verdict": "", "insights_titulos": [], "acao_principal": ""
+  }
+]
