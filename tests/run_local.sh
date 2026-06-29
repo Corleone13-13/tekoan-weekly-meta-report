@@ -40,4 +40,25 @@ BODY_LEN="$(python3 -c "import json;print(len(json.load(open('$EMAIL_JSON'))['bo
 
 echo "out/email.json gerado | body_html: ${BODY_LEN} chars | report_html: ${REPORT_HTML}"
 
+# ----------------------------------------------------------------------------
+# Asseroes por tipo de fixture (Parte C). Greps no HTML completo do relatorio.
+# ----------------------------------------------------------------------------
+case "$FIXTURE" in
+  *video*)
+    echo "Checando asseroes da fixture de VIDEO..."
+    grep -q "Ranking de criativos" "$REPORT_HTML" || { echo "FALHA: faltou 'Ranking de criativos'" >&2; exit 1; }
+    grep -q ">Vídeos</h2>" "$REPORT_HTML"          || { echo "FALHA: faltou bloco 'Vídeos'" >&2; exit 1; }
+    grep -q "🏆" "$REPORT_HTML"                     || { echo "FALHA: faltou marcador campeao '🏆'" >&2; exit 1; }
+    echo "OK: Ranking de criativos + Vídeos + 🏆 presentes."
+    ;;
+  *estatico*)
+    echo "Checando asseroes da fixture ESTATICA..."
+    grep -q "Ranking de criativos" "$REPORT_HTML" || { echo "FALHA: faltou 'Ranking de criativos'" >&2; exit 1; }
+    if grep -q ">Vídeos</h2>" "$REPORT_HTML"; then
+      echo "FALHA: bloco 'Vídeos' nao deveria aparecer sem criativo de video" >&2; exit 1
+    fi
+    echo "OK: Ranking de criativos presente e bloco 'Vídeos' ausente."
+    ;;
+esac
+
 echo "DRY-RUN ok"
