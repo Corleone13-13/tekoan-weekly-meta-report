@@ -169,24 +169,28 @@ def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
             action="Não cortar criativo nem mexer em verba por um dia ruim; decidir sempre por período fechado.",
             cert="confirmado", prio=3))
 
-    # 7. Escala depende de capacidade de atendimento
+    # 7. Espaço para escalar (atendimento por IA absorve qualquer volume, sem gargalo)
     if W["conv"] >= 8:
         items.append(dict(
-            title="Escalar verba depende da capacidade de atendimento",
-            detail=("Mais verba só compensa se a recepção responde rápido e converte as conversas. "
-                    "Conversa não respondida é dinheiro perdido."),
-            action=("Antes de subir o orçamento, confirmar com a operação o tempo de resposta e o gargalo "
-                    "de atendimento no WhatsApp."),
+            title="Há espaço para escalar a verba",
+            detail=("O volume está consistente e o atendimento é feito pela IA da Tekoan, que responde "
+                    "instantâneo e absorve qualquer quantidade de conversas. Logo, o teto da escala é a "
+                    "rentabilidade (CPL), não a operação."),
+            action=("Escalar a verba de forma gradual (em torno de 20% por vez) acompanhando o CPL: enquanto "
+                    "o custo por conversa se mantiver, há espaço para subir."),
             cert="validar", prio=2))
 
-    # 8. Conversas que não evoluem (funil de mensagens) — só se houver dado de 1ª resposta
+    # 8. Queda anômala na 1ª resposta — só se houver dado. Atendimento é por IA: deveria ser ~100%.
     if W["first_reply"] > 0 and W["conv"] >= 5 and W["reply_rate"] < 0.7:
         items.append(dict(
-            title=f"Parte das conversas não evolui (resposta em {pct(W['reply_rate'])})",
-            detail=(f"Das {W['conv']:.0f} conversas iniciadas, {W['first_reply']:.0f} registraram primeira resposta. "
-                    "Conversa iniciada que não recebe resposta é verba paga que morre no “oi”."),
-            action=("Verificar com a recepção o tempo de resposta no WhatsApp: conversa parada é a maior "
-                    "perda invisível e derruba o retorno real da verba."),
+            title=f"Primeira resposta anormalmente baixa ({pct(W['reply_rate'])})",
+            detail=(f"Das {W['conv']:.0f} conversas iniciadas, só {W['first_reply']:.0f} registraram primeira resposta. "
+                    "Como o atendimento é feito pela IA da Tekoan, essa taxa deveria ficar perto de 100%; um "
+                    "valor baixo é anômalo e aponta falha técnica na integração da IA ou no rastreamento do evento, "
+                    "não lentidão de atendimento."),
+            action=("Investigar a integração e o funil da IA de atendimento e o rastreamento do evento de "
+                    "primeira resposta: a conversa pode estar sendo respondida sem o evento ser registrado, "
+                    "ou a IA pode não estar recebendo a mensagem."),
             cert="validar", prio=1))
 
     # 9. Bloqueios após contato — só se houver
@@ -194,8 +198,8 @@ def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
         items.append(dict(
             title=f"{W['blocks']:.0f} bloqueio(s) após o contato",
             detail=("Pessoas que bloquearam a conversa depois do anúncio. Em volume, sinaliza desalinhamento "
-                    "entre a promessa do criativo e o que a recepção entrega na abertura."),
-            action="Se recorrer, alinhar a promessa do criativo com o primeiro contato da recepção.",
+                    "entre a promessa do criativo e o que a IA de atendimento entrega na abertura."),
+            action="Se recorrer, alinhar a promessa do criativo com a abordagem inicial da IA de atendimento.",
             cert="validar", prio=2))
 
     # 10. Frequência (fadiga real vs. público fresco) — só com dado de período
