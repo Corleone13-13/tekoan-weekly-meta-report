@@ -1,0 +1,8 @@
+{
+  "result": [
+    { "ad_name": "Estático A", "reach": 3200, "frequency": 1.40, "cpp": 31.95 },
+    { "ad_name": "Estático B", "reach": 2650, "frequency": 1.46, "cpp": 41.92 },
+    { "ad_name": "Vídeo Hook 1", "reach": 3580, "frequency": 1.36, "cpp": 32.60 },
+    { "ad_name": "Estático C", "reach": 2480, "frequency": 1.32, "cpp": 33.10 }
+  ]
+}

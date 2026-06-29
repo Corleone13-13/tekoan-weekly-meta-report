@@ -1,0 +1,9 @@
+# entradas/saidas transitorias do pipeline (geradas em runtime/teste)
+/windsor.json
+/windsor_period.json
+/rows.json
+/period.json
+/out/*.pdf
+.sent_*
+__pycache__/
+*.pyc

@@ -1,0 +1,76 @@
+{
+  "result": [
+    {
+      "date": "2026-06-26",
+      "ad_name": "Estático A",
+      "spend": 32.50,
+      "impressions": 1450,
+      "clicks": 22,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 5,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 4,
+      "actions_onsite_conversion_messaging_block": 0
+    },
+    {
+      "date": "2026-06-27",
+      "ad_name": "Estático A",
+      "spend": 41.20,
+      "impressions": 1820,
+      "clicks": 27,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 7,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 6,
+      "actions_onsite_conversion_messaging_block": 0
+    },
+    {
+      "date": "2026-06-28",
+      "ad_name": "Estático A",
+      "spend": 28.75,
+      "impressions": 1190,
+      "clicks": 18,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 4,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 3,
+      "actions_onsite_conversion_messaging_block": 0
+    },
+    {
+      "date": "2026-06-26",
+      "ad_name": "Estático B",
+      "spend": 24.90,
+      "impressions": 980,
+      "clicks": 11,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 2,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 1,
+      "actions_onsite_conversion_messaging_block": 0
+    },
+    {
+      "date": "2026-06-27",
+      "ad_name": "Estático B",
+      "spend": 36.40,
+      "impressions": 1330,
+      "clicks": 14,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 3,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 2,
+      "actions_onsite_conversion_messaging_block": 0
+    },
+    {
+      "date": "2026-06-28",
+      "ad_name": "Estático B",
+      "spend": 47.80,
+      "impressions": 1610,
+      "clicks": 16,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 3,
+      "actions_lead": 0,
+      "actions_offsite_conversion_fb_pixel_lead": 0,
+      "actions_onsite_conversion_messaging_first_reply": 2,
+      "actions_onsite_conversion_messaging_block": 0
+    }
+  ]
+}
