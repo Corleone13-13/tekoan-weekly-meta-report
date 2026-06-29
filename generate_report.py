@@ -85,6 +85,202 @@ def delta_label(cur, prev, lower_is_better=True):
     cls = "good" if better else "bad"
     return (f"{arrow} {abs(d)*100:.0f}%", cls)
 
+# ----------------------------- diagnóstico por regras fixas (fallback) -----------------------------
+def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
+    """Diagnóstico de gestor por REGRAS FIXAS (fallback determinístico).
+
+    Roda quando não há analysis.json válido. Cada item: title, detail,
+    action (str ou None), cert ('confirmado'|'validar'), prio (1|2|3).
+    Comportamento idêntico ao histórico; não alterar texto nem lógica.
+    """
+    items = []
+
+    # 1. Conversão = CTWA, não lead qualificado
+    if W["leads"] == 0 and W["conv"] > 0:
+        items.append(dict(
+            title="A conversão é conversa no WhatsApp, não lead qualificado",
+            detail=(f"Formulário e pixel zerados: as {W['conv']:.0f} conversões do período são conversas "
+                    f"iniciadas (CTWA). O CPL de {brl(W['cpl'])} é custo por conversa, não por agendamento ou venda."),
+            action=(f"Cruzar as {W['conv']:.0f} conversas com o CRM/WhatsApp e medir quantas viraram agendamento "
+                    "e venda. Sem esse número, o CPL não diz se a verba está rentável."),
+            cert="confirmado", prio=1))
+
+    # 2. Verba desbalanceada entre criativos
+    valid = [(n, a) for n, a in cre_aggs if a["conv"] > 0]
+    if len(valid) >= 2:
+        best_n, best = valid[0]
+        worst_n, worst = valid[-1]
+        if worst["cpl"] > best["cpl"] * 1.2:
+            det = (f"{best_n}: CPL {brl(best['cpl'])} com {brl(best['spend'])} de verba. "
+                   f"{worst_n}: CPL {brl(worst['cpl'])} com {brl(worst['spend'])}.")
+            if worst["spend"] > best["spend"]:
+                det += " O criativo mais caro por conversa está levando mais verba."
+            items.append(dict(
+                title="Verba desbalanceada entre criativos",
+                detail=det,
+                action=(f"Migrar verba aos poucos do «{worst_n}» para o «{best_n}». Antes de cortar, confirmar que "
+                        f"o CPL melhor sustenta: é amostra de {best['conv']:.0f} conversas, ainda pequena."),
+                cert="validar", prio=1))
+
+    # 3. Pouca diversidade criativa / fadiga
+    if len(cre_aggs) <= 2:
+        items.append(dict(
+            title=f"Só {len(cre_aggs)} criativo(s) no ar — base criativa estreita",
+            detail=("Pouca variação limita o aprendizado do algoritmo e acelera fadiga de público "
+                    "(frequência sobe e o CPM encarece)."),
+            action=("Subir 2 a 3 criativos novos com ângulos distintos (oferta, prova social, antes/depois) "
+                    "para dar material de teste e otimização."),
+            cert="validar", prio=2))
+
+    # 4. Tendência vs período anterior
+    if P and P["conv"] > 0:
+        dcpl, _ = delta_label(W["cpl"], P["cpl"])
+        piora = W["cpl"] > P["cpl"] * 1.1
+        items.append(dict(
+            title=f"Tendência vs {unidade} anterior",
+            detail=(f"CPL {brl(P['cpl'])} → {brl(W['cpl'])} ({dcpl}) · conversas {P['conv']:.0f} → {W['conv']:.0f} · "
+                    f"CPC {brl(P['cpc'])} → {brl(W['cpc'])} · investimento {brl(P['spend'])} → {brl(W['spend'])}."),
+            action=("CPL em alta: investigar criativo/público antes de manter ou subir verba." if piora else None),
+            cert="confirmado", prio=2 if piora else 3))
+
+    # 5. CPM elevado
+    if W["cpm"] > 70:
+        items.append(dict(
+            title=f"CPM elevado ({brl(W['cpm'])})",
+            detail="Pode ser público estreito/saturado ou leilão concorrido — a entrega sozinha não distingue a causa.",
+            action=("Checar frequência e tamanho de público; se a frequência estiver alta, ampliar público "
+                    "ou renovar criativo."),
+            cert="validar", prio=2))
+
+    # 6. Volume baixo (cuidado estatístico)
+    if W["conv"] < 20:
+        items.append(dict(
+            title=f"Volume baixo ({W['conv']:.0f} conversas no período)",
+            detail=(f"Cerca de {W['conv']/per_days:.1f} conversa(s) por dia. Oscilação diária é ruído de "
+                    "amostra, não tendência."),
+            action="Não cortar criativo nem mexer em verba por um dia ruim; decidir sempre por período fechado.",
+            cert="confirmado", prio=3))
+
+    # 7. Escala depende de capacidade de atendimento
+    if W["conv"] >= 8:
+        items.append(dict(
+            title="Escalar verba depende da capacidade de atendimento",
+            detail=("Mais verba só compensa se a recepção responde rápido e converte as conversas. "
+                    "Conversa não respondida é dinheiro perdido."),
+            action=("Antes de subir o orçamento, confirmar com a operação o tempo de resposta e o gargalo "
+                    "de atendimento no WhatsApp."),
+            cert="validar", prio=2))
+
+    # 8. Conversas que não evoluem (funil de mensagens) — só se houver dado de 1ª resposta
+    if W["first_reply"] > 0 and W["conv"] >= 5 and W["reply_rate"] < 0.7:
+        items.append(dict(
+            title=f"Parte das conversas não evolui (resposta em {pct(W['reply_rate'])})",
+            detail=(f"Das {W['conv']:.0f} conversas iniciadas, {W['first_reply']:.0f} registraram primeira resposta. "
+                    "Conversa iniciada que não recebe resposta é verba paga que morre no “oi”."),
+            action=("Verificar com a recepção o tempo de resposta no WhatsApp: conversa parada é a maior "
+                    "perda invisível e derruba o retorno real da verba."),
+            cert="validar", prio=1))
+
+    # 9. Bloqueios após contato — só se houver
+    if W["blocks"] > 0:
+        items.append(dict(
+            title=f"{W['blocks']:.0f} bloqueio(s) após o contato",
+            detail=("Pessoas que bloquearam a conversa depois do anúncio. Em volume, sinaliza desalinhamento "
+                    "entre a promessa do criativo e o que a recepção entrega na abertura."),
+            action="Se recorrer, alinhar a promessa do criativo com o primeiro contato da recepção.",
+            cert="validar", prio=2))
+
+    # 10. Frequência (fadiga real vs. público fresco) — só com dado de período
+    freqs = [(n, period_map[n]) for n, _ in cre_aggs
+             if n in period_map and period_map[n]["frequency"] > 0]
+    if freqs:
+        worst_fn, worst_fp = max(freqs, key=lambda t: t[1]["frequency"])
+        fmax = worst_fp["frequency"]
+        if fmax >= 2.5:
+            items.append(dict(
+                title=f"Frequência alta em «{worst_fn}» ({freqx(fmax)})",
+                detail=("A mesma pessoa já viu o anúncio muitas vezes no período. Acima de ~2,5x costuma "
+                        "indicar fadiga: o CTR cai e o CPM encarece."),
+                action=f"Renovar o criativo «{worst_fn}» ou ampliar o público para diluir a repetição.",
+                cert="validar", prio=2))
+        elif W["cpm"] > 70 and fmax < 1.6:
+            items.append(dict(
+                title="Custo alto não é saturação: o público está fresco",
+                detail=(f"A maior frequência do período é {freqx(fmax)} (cada pessoa viu pouco). Logo o CPM/CPP "
+                        "alto vem de público estreito ou leilão concorrido, não de fadiga de criativo."),
+                action=("Em vez de trocar criativo, ampliar ou abrir o público e revisar segmentação e "
+                        "estratégia de lance."),
+                cert="validar", prio=2))
+
+    return items
+
+
+# ----------------------------- motor de análise híbrido (analysis.json) -----------------------------
+def load_analysis(path):
+    """Lê e VALIDA um analysis.json escrito pelo agente.
+
+    Retorna um dict normalizado (mesmo shape usado na renderização) ou None se
+    o arquivo estiver ausente, ilegível ou fora do contrato. NUNCA propaga
+    exceção: qualquer falha cai em None, e o relatório usa as regras fixas.
+    """
+    try:
+        if not path:
+            return None
+        p = Path(path)
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text())
+        if not isinstance(data, dict):
+            return None
+
+        raw_insights = data.get("insights")
+        if raw_insights is None:
+            raw_insights = []
+        if not isinstance(raw_insights, list):
+            return None
+        insights = []
+        for it in raw_insights:
+            if not isinstance(it, dict):
+                return None
+            title = it.get("title")
+            detail = it.get("detail")
+            if not isinstance(title, str) or not title.strip():
+                return None
+            if not isinstance(detail, str) or not detail.strip():
+                return None
+            action = it.get("action")
+            if action is not None and not isinstance(action, str):
+                return None
+            if isinstance(action, str) and not action.strip():
+                action = None
+            cert = it.get("cert", "validar")
+            if cert not in ("confirmado", "validar"):
+                cert = "validar"
+            prio = it.get("prio", 2)
+            if prio not in (1, 2, 3):
+                prio = 2
+            insights.append(dict(title=title, detail=detail, action=action,
+                                 cert=cert, prio=prio, novo=bool(it.get("novo", False))))
+
+        def _opt_str(key):
+            v = data.get(key)
+            if v is None:
+                return None
+            if not isinstance(v, str):
+                raise ValueError(f"{key} não é texto")
+            v = v.strip()
+            return v or None
+
+        return dict(
+            trend_verdict=_opt_str("trend_verdict"),
+            insights=insights,
+            video_read=_opt_str("video_read"),
+            manager_read=_opt_str("manager_read"),
+            silence=bool(data.get("silence", False)))
+    except Exception as _e:
+        print("WARN: analysis.json ignorado (fallback para regras fixas):", _e)
+        return None
+
 # ----------------------------- load -----------------------------
 ap = argparse.ArgumentParser()
 ap.add_argument("data")
@@ -93,6 +289,9 @@ ap.add_argument("--recipient", default="")
 ap.add_argument("--mode", default="weekly", choices=["weekly", "monthly"])
 ap.add_argument("--period-data", default="", dest="period_data",
                 help="JSON opcional com reach/frequency/cpp por criativo no período (nível agregado, sem data).")
+ap.add_argument("--analysis", default="",
+                help="JSON opcional de análise escrita pelo agente (analysis.json). "
+                     "Ausente/inválido → regras fixas (fallback).")
 args = ap.parse_args()
 
 rows = json.loads(Path(args.data).read_text())
@@ -216,126 +415,17 @@ def secs(v):  # tempo em segundos, ex.: 6,4s
 gen_str = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
 
 # ----------------------------- diagnóstico de gestor (itens estruturados) -----------------------------
-# cada item: title, detail, action (str ou None), cert ('confirmado'|'validar'), prio (1|2|3)
+# Motor híbrido: se houver analysis.json válido (escrito pelo agente), usamos a
+# análise dele; caso contrário, caímos nas REGRAS FIXAS (legacy_diagnostics).
+# Em ambos os caminhos `items` tem o mesmo shape:
+#   title, detail, action (str ou None), cert ('confirmado'|'validar'), prio (1|2|3)
+# Números e tabelas continuam SEMPRE vindo do script (determinístico).
 unidade = L["unit"]
-items = []
-
-# 1. Conversão = CTWA, não lead qualificado
-if W["leads"] == 0 and W["conv"] > 0:
-    items.append(dict(
-        title="A conversão é conversa no WhatsApp, não lead qualificado",
-        detail=(f"Formulário e pixel zerados: as {W['conv']:.0f} conversões do período são conversas "
-                f"iniciadas (CTWA). O CPL de {brl(W['cpl'])} é custo por conversa, não por agendamento ou venda."),
-        action=(f"Cruzar as {W['conv']:.0f} conversas com o CRM/WhatsApp e medir quantas viraram agendamento "
-                "e venda. Sem esse número, o CPL não diz se a verba está rentável."),
-        cert="confirmado", prio=1))
-
-# 2. Verba desbalanceada entre criativos
-valid = [(n, a) for n, a in cre_aggs if a["conv"] > 0]
-if len(valid) >= 2:
-    best_n, best = valid[0]
-    worst_n, worst = valid[-1]
-    if worst["cpl"] > best["cpl"] * 1.2:
-        det = (f"{best_n}: CPL {brl(best['cpl'])} com {brl(best['spend'])} de verba. "
-               f"{worst_n}: CPL {brl(worst['cpl'])} com {brl(worst['spend'])}.")
-        if worst["spend"] > best["spend"]:
-            det += " O criativo mais caro por conversa está levando mais verba."
-        items.append(dict(
-            title="Verba desbalanceada entre criativos",
-            detail=det,
-            action=(f"Migrar verba aos poucos do «{worst_n}» para o «{best_n}». Antes de cortar, confirmar que "
-                    f"o CPL melhor sustenta: é amostra de {best['conv']:.0f} conversas, ainda pequena."),
-            cert="validar", prio=1))
-
-# 3. Pouca diversidade criativa / fadiga
-if len(cre_aggs) <= 2:
-    items.append(dict(
-        title=f"Só {len(cre_aggs)} criativo(s) no ar — base criativa estreita",
-        detail=("Pouca variação limita o aprendizado do algoritmo e acelera fadiga de público "
-                "(frequência sobe e o CPM encarece)."),
-        action=("Subir 2 a 3 criativos novos com ângulos distintos (oferta, prova social, antes/depois) "
-                "para dar material de teste e otimização."),
-        cert="validar", prio=2))
-
-# 4. Tendência vs período anterior
-if P and P["conv"] > 0:
-    dcpl, _ = delta_label(W["cpl"], P["cpl"])
-    piora = W["cpl"] > P["cpl"] * 1.1
-    items.append(dict(
-        title=f"Tendência vs {unidade} anterior",
-        detail=(f"CPL {brl(P['cpl'])} → {brl(W['cpl'])} ({dcpl}) · conversas {P['conv']:.0f} → {W['conv']:.0f} · "
-                f"CPC {brl(P['cpc'])} → {brl(W['cpc'])} · investimento {brl(P['spend'])} → {brl(W['spend'])}."),
-        action=("CPL em alta: investigar criativo/público antes de manter ou subir verba." if piora else None),
-        cert="confirmado", prio=2 if piora else 3))
-
-# 5. CPM elevado
-if W["cpm"] > 70:
-    items.append(dict(
-        title=f"CPM elevado ({brl(W['cpm'])})",
-        detail="Pode ser público estreito/saturado ou leilão concorrido — a entrega sozinha não distingue a causa.",
-        action=("Checar frequência e tamanho de público; se a frequência estiver alta, ampliar público "
-                "ou renovar criativo."),
-        cert="validar", prio=2))
-
-# 6. Volume baixo (cuidado estatístico)
-if W["conv"] < 20:
-    items.append(dict(
-        title=f"Volume baixo ({W['conv']:.0f} conversas no período)",
-        detail=(f"Cerca de {W['conv']/per_days:.1f} conversa(s) por dia. Oscilação diária é ruído de "
-                "amostra, não tendência."),
-        action="Não cortar criativo nem mexer em verba por um dia ruim; decidir sempre por período fechado.",
-        cert="confirmado", prio=3))
-
-# 7. Escala depende de capacidade de atendimento
-if W["conv"] >= 8:
-    items.append(dict(
-        title="Escalar verba depende da capacidade de atendimento",
-        detail=("Mais verba só compensa se a recepção responde rápido e converte as conversas. "
-                "Conversa não respondida é dinheiro perdido."),
-        action=("Antes de subir o orçamento, confirmar com a operação o tempo de resposta e o gargalo "
-                "de atendimento no WhatsApp."),
-        cert="validar", prio=2))
-
-# 8. Conversas que não evoluem (funil de mensagens) — só se houver dado de 1ª resposta
-if W["first_reply"] > 0 and W["conv"] >= 5 and W["reply_rate"] < 0.7:
-    items.append(dict(
-        title=f"Parte das conversas não evolui (resposta em {pct(W['reply_rate'])})",
-        detail=(f"Das {W['conv']:.0f} conversas iniciadas, {W['first_reply']:.0f} registraram primeira resposta. "
-                "Conversa iniciada que não recebe resposta é verba paga que morre no “oi”."),
-        action=("Verificar com a recepção o tempo de resposta no WhatsApp: conversa parada é a maior "
-                "perda invisível e derruba o retorno real da verba."),
-        cert="validar", prio=1))
-
-# 9. Bloqueios após contato — só se houver
-if W["blocks"] > 0:
-    items.append(dict(
-        title=f"{W['blocks']:.0f} bloqueio(s) após o contato",
-        detail=("Pessoas que bloquearam a conversa depois do anúncio. Em volume, sinaliza desalinhamento "
-                "entre a promessa do criativo e o que a recepção entrega na abertura."),
-        action="Se recorrer, alinhar a promessa do criativo com o primeiro contato da recepção.",
-        cert="validar", prio=2))
-
-# 10. Frequência (fadiga real vs. público fresco) — só com dado de período
-freqs = [(n, period_map[n]) for n, _ in cre_aggs
-         if n in period_map and period_map[n]["frequency"] > 0]
-if freqs:
-    worst_fn, worst_fp = max(freqs, key=lambda t: t[1]["frequency"])
-    fmax = worst_fp["frequency"]
-    if fmax >= 2.5:
-        items.append(dict(
-            title=f"Frequência alta em «{worst_fn}» ({freqx(fmax)})",
-            detail=("A mesma pessoa já viu o anúncio muitas vezes no período. Acima de ~2,5x costuma "
-                    "indicar fadiga: o CTR cai e o CPM encarece."),
-            action=f"Renovar o criativo «{worst_fn}» ou ampliar o público para diluir a repetição.",
-            cert="validar", prio=2))
-    elif W["cpm"] > 70 and fmax < 1.6:
-        items.append(dict(
-            title="Custo alto não é saturação: o público está fresco",
-            detail=(f"A maior frequência do período é {freqx(fmax)} (cada pessoa viu pouco). Logo o CPM/CPP "
-                    "alto vem de público estreito ou leilão concorrido, não de fadiga de criativo."),
-            action=("Em vez de trocar criativo, ampliar ou abrir o público e revisar segmentação e "
-                    "estratégia de lance."),
-            cert="validar", prio=2))
+analysis = load_analysis(args.analysis)
+if analysis is not None:
+    items = analysis["insights"]
+else:
+    items = legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days)
 
 # ----------------------------- HTML/PDF -----------------------------
 CSS = """
@@ -374,6 +464,7 @@ tbody tr.lose td { background: #fcf2f1; }
 .badge { font-size: 6.8pt; font-weight: 700; padding: 1px 6px; border-radius: 9px; white-space: nowrap; }
 .badge.confirmado { background: #e3efe3; color: #2c6e2c; }
 .badge.validar { background: #faf0d6; color: #8a5d00; }
+.badge.novo { background: #e7eefb; color: #1F3A5F; }
 .diag { margin: 0 0 9px 0; padding-left: 13px; border-left: 3px solid #2c6e2c; }
 .diag.validar { border-left-color: #C9A227; }
 .diag .dt { font-weight: 700; color: #1F3A5F; font-size: 9.8pt; }
@@ -440,11 +531,30 @@ legend = ('<p class="legend">'
           '<br>Prioridade: <span class="prio p1">P1</span> alta &nbsp; '
           '<span class="prio p2">P2</span> média &nbsp; <span class="prio p3">P3</span> baixa</p>')
 
+def novo_badge(it):
+    return ' <span class="badge novo">Novo</span>' if it.get("novo") else ""
+
 diag_html = ""
 for it in items:
     cls = "diag" if it["cert"] == "confirmado" else "diag validar"
     diag_html += (f'<div class="{cls}"><p><span class="dt">{it["title"]}</span> '
-                  f'{cert_badge(it["cert"])}<br><span class="dd">{it["detail"]}</span></p></div>')
+                  f'{cert_badge(it["cert"])}{novo_badge(it)}<br>'
+                  f'<span class="dd">{it["detail"]}</span></p></div>')
+
+# Silêncio estratégico: análise válida pediu silence e não trouxe insights.
+# Mostramos uma linha mínima NO LUGAR da lista; as tabelas seguem normais.
+if analysis is not None and analysis.get("silence") and not items:
+    diag_html = ('<div class="diag"><p><span class="dd">Sem novos pontos estratégicos '
+                 'neste período; números dentro do padrão.</span></p></div>')
+
+# Veredito de tendência (motor híbrido): destaque no topo da análise, se houver.
+trend_html = ""
+if analysis is not None and analysis.get("trend_verdict"):
+    trend_html = ('<div class="lead"><span class="tag">Tendência da conta</span>'
+                  f'<p>{analysis["trend_verdict"]}</p></div>')
+
+# Legenda de badges só faz sentido quando há itens com badge.
+diag_legend = legend if items else ""
 
 acts = sorted([it for it in items if it.get("action")], key=lambda it: it["prio"])
 task_html = ""
@@ -452,6 +562,14 @@ for it in acts:
     task_html += (f'<div class="task"><span class="chk">&#9744;</span>'
                   f'<span class="prio p{it["prio"]}">{PRIO_LBL[it["prio"]]}</span>'
                   f'{it["action"]} {cert_badge(it["cert"])}</div>')
+if not task_html:
+    task_html = '<p class="small">Sem ações prioritárias neste período.</p>'
+
+# Leitura do vídeo campeão (motor híbrido): renderizada junto do bloco Vídeos.
+video_read_html = ""
+if analysis is not None and analysis.get("video_read"):
+    video_read_html = ('<div class="lead"><span class="tag">Leitura do vídeo campeão</span>'
+                       f'<p>{analysis["video_read"]}</p></div>')
 
 # funil de mensagens (linha abaixo do consolidado) — só com dado de 1ª resposta
 funnel_line = ""
@@ -541,11 +659,17 @@ sections.append(f'<h2>{secnum(k)}Consolidado e por criativo</h2>'
 if reach_html:
     sections.append(f'<h2>{secnum(k)}Alcance e frequência</h2>' + reach_html); k += 1
 sections.append(f'<h2>{secnum(k)}Ranking de criativos</h2>' + ranking_html); k += 1
-if video_html:
-    sections.append(f'<h2>{secnum(k)}Vídeos</h2>' + video_html); k += 1
+# Vídeos: aparece se houver criativo de vídeo OU leitura de vídeo escrita pelo agente.
+if video_html or video_read_html:
+    sections.append(f'<h2>{secnum(k)}Vídeos</h2>' + video_read_html + video_html); k += 1
 if wow_html:
     sections.append(f'<h2>{secnum(k)}{L["comp_title"]}</h2>' + wow_html); k += 1
-sections.append(f'<h2>{secnum(k)}Diagnóstico — visão de gestor de tráfego</h2>' + legend + diag_html); k += 1
+sections.append(f'<h2>{secnum(k)}Diagnóstico — visão de gestor de tráfego</h2>'
+                + trend_html + diag_legend + diag_html); k += 1
+# Leitura de performance do gestor de ads (preenchida só no mensal): seção própria.
+if analysis is not None and analysis.get("manager_read"):
+    sections.append(f'<h2>{secnum(k)}Leitura de performance do gestor</h2>'
+                    f'<p>{analysis["manager_read"]}</p>'); k += 1
 sections.append(f'<h2>{secnum(k)}Plano de ação priorizado</h2>' + task_html); k += 1
 body_sections = "\n".join(sections)
 

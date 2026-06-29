@@ -1,6 +1,7 @@
 # entradas/saidas transitorias do pipeline (geradas em runtime/teste)
 /windsor.json
 /windsor_period.json
+/analysis.json
 /rows.json
 /period.json
 /out/*.pdf
