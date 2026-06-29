@@ -63,6 +63,19 @@ def main():
         # funil de mensagens (aditivos; ausentes em fetch antigo → 0, nunca quebra)
         "first_reply": x.get("actions_onsite_conversion_messaging_first_reply") or 0,
         "blocks": x.get("actions_onsite_conversion_messaging_block") or 0,
+        # metricas de video (aditivas; ausentes em criativo estatico/fetch antigo → 0,
+        # nunca quebra). p25..p100 sao a curva de retencao decrescente.
+        "video_3s": x.get("actions_video_view") or 0,
+        "video_plays": x.get("video_play_actions_video_view") or 0,
+        "thruplays": x.get("video_thruplay_watched_actions_video_view") or 0,
+        "cost_per_thruplay": x.get("cost_per_thruplay_video_view") or 0,
+        "v_p25": x.get("video_p25_watched_actions_video_view") or 0,
+        "v_p50": x.get("video_p50_watched_actions_video_view") or 0,
+        "v_p75": x.get("video_p75_watched_actions_video_view") or 0,
+        "v_p95": x.get("video_p95_watched_actions_video_view") or 0,
+        "v_p100": x.get("video_p100_watched_actions_video_view") or 0,
+        "video_avg_time": x.get("video_avg_time_watched_actions_video_view") or 0,
+        "creative_id": x.get("creative_id"),
     } for x in raw]
     Path("rows.json").write_text(json.dumps(rows, ensure_ascii=False))
 
