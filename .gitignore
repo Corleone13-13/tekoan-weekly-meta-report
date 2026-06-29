@@ -5,6 +5,7 @@
 /rows.json
 /period.json
 /out/*.pdf
+/out/history_row.json
 .sent_*
 __pycache__/
 *.pyc

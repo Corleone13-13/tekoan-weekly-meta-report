@@ -661,6 +661,12 @@ if fmt_tot["Vídeo"]["n"] > 0 and fmt_tot["Imagem"]["n"] > 0:  # precisa dos doi
                    'do formato ÷ gasto total. CPL = Gasto ÷ Conversas. Use para decidir alocação de verba '
                    'entre vídeo e imagem.</p>')
 
+# campeão do período (melhor criativo do ranking, se converteu) — usado no snapshot e no e-mail
+champ_name, champ_cpl = None, 0.0
+if champ_ranked and champ_ranked[0][1]["conv"] > 0:
+    champ_name = champ_ranked[0][0]
+    champ_cpl = champ_ranked[0][1]["cpl"]
+
 # ----------------------------- vídeos (só se houver criativo de vídeo) -----------------------------
 video_html = ""
 if has_video:
@@ -731,6 +737,35 @@ html = f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
 # sempre grava o HTML completo do relatorio (fallback de corpo de e-mail sem dependencia de sistema)
 (outdir / "report.html").write_text(html)
+
+# snapshot do período atual para alimentar o histórico (Evolução em execuções futuras).
+# Fail-open: qualquer dado ausente vira 0/null; nunca quebra o relatório.
+try:
+    vvi = None
+    if fmt_tot["Vídeo"]["n"] > 0 and fmt_tot["Imagem"]["n"] > 0:
+        def _fmt_snap(key):
+            f = fmt_tot[key]
+            return dict(spend=round(f["spend"], 2), conv=int(f["conv"]),
+                        cpl=round(f["spend"] / f["conv"], 2) if f["conv"] else 0)
+        vvi = {"video": _fmt_snap("Vídeo"), "imagem": _fmt_snap("Imagem")}
+    history_row = {
+        "periodo": L["subj"], "modo": args.mode, "gerado_em": gen_str,
+        "spend": round(W["spend"], 2), "conversas": int(W["conv"]),
+        "cpl": round(W["cpl"], 2), "cpc": round(W["cpc"], 2), "cpm": round(W["cpm"], 2),
+        "ctr": round(W["ctr"], 6), "reply_rate": round(W["reply_rate"], 6),
+        "blocks": int(W["blocks"]),
+        "n_criativos": len(cre_aggs),
+        "n_video": fmt_tot["Vídeo"]["n"], "n_imagem": fmt_tot["Imagem"]["n"],
+        "campeao": champ_name, "campeao_cpl": round(champ_cpl, 2),
+        "video_vs_imagem": vvi,
+        "trend_verdict": (analysis.get("trend_verdict") or "") if analysis else "",
+        "insights_titulos": [it["title"] for it in items],
+        "acao_principal": (acts[0]["action"] if acts else ""),
+    }
+    (outdir / "history_row.json").write_text(
+        json.dumps(history_row, ensure_ascii=False, indent=2))
+except Exception as _ex:
+    print("WARN: history_row.json nao gravado:", _ex)
 pdf_path = outdir / f"Tekoan_Meta_Ads_{L['fname']}_{maxd.isoformat()}.pdf"
 pdf_ok = False
 try:

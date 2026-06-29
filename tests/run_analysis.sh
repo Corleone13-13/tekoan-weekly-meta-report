@@ -15,6 +15,8 @@ export MAIL_TO=test@test.com
 
 FAILED=0
 REPORT_HTML="$ROOT/out/report.html"
+EMAIL_JSON="$ROOT/out/email.json"
+HISTORY_ROW="$ROOT/out/history_row.json"
 
 # prepara o pipeline: copia dados (windsor) e, opcionalmente, a analise.
 setup() {  # $1 = fixture de dados ; $2 = fixture de analise (ou "-" para nenhuma)
@@ -22,12 +24,14 @@ setup() {  # $1 = fixture de dados ; $2 = fixture de analise (ou "-" para nenhum
   cp "$FX/windsor_period_sample.json" "$ROOT/windsor_period.json"
   rm -f "$ROOT/analysis.json"
   [ "$2" != "-" ] && cp "$2" "$ROOT/analysis.json"
-  rm -f "$ROOT/out/report.html" "$ROOT/out/email.json"
+  rm -f "$ROOT/out/report.html" "$ROOT/out/email.json" "$ROOT/out/history_row.json"
   python3 run_from_json.py windsor.json
 }
 
 want()    { if grep -qF "$1" "$REPORT_HTML"; then echo "  OK  contem: $2"; else echo "  FALHA  faltou: $2"; FAILED=1; fi; }
 absent()  { if grep -qF "$1" "$REPORT_HTML"; then echo "  FALHA  nao deveria conter: $2"; FAILED=1; else echo "  OK  ausente: $2"; fi; }
+# valida que o snapshot out/history_row.json tem as chaves principais
+hwant()   { if python3 -c "import json,sys;d=json.load(open('$HISTORY_ROW'));sys.exit(0 if all(k in d for k in sys.argv[1].split(',')) else 1)" "$1"; then echo "  OK  history_row.json tem chaves: $1"; else echo "  FALHA  history_row.json sem chaves: $1"; FAILED=1; fi; }
 
 echo "============================================================"
 echo "CASO (a) — analysis_sample.json (weekly): renderiza analise, esconde legado"
@@ -40,6 +44,8 @@ want "Leitura do vídeo campeão"                 "video_read junto do bloco Vid
 want "Ranking de criativos"                     "tabela de ranking (sempre)"
 absent "A conversão é conversa no WhatsApp, não lead qualificado" "regra legada 1"
 absent "Volume baixo ("                          "regra legada 6"
+# snapshot de histórico do período atual
+hwant "periodo,modo,spend,conversas,cpl,campeao"  "snapshot gerado"
 
 echo "============================================================"
 echo "CASO (b) — SEM analysis.json (weekly): fallback para regras fixas"
