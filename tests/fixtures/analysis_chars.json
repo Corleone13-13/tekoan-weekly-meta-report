@@ -1,0 +1,16 @@
+{
+  "trend_verdict": "CTR < 1% e custo & retorno > meta",
+  "insights": [
+    {
+      "title": "Métrica com símbolos < & >",
+      "detail": "<b>teste</b> & frequência < 2x no público quente",
+      "action": "rever criativos com CTR < 1% & CPL > meta antes de escalar",
+      "cert": "confirmado",
+      "prio": 1,
+      "novo": true
+    }
+  ],
+  "video_read": "hook < 25% & retenção > 50% indica corte no início",
+  "manager_read": null,
+  "silence": false
+}

@@ -14,10 +14,18 @@ Cada linha do JSON deve conter:
     leads          (leads de formulário/pixel; normalmente 0 nesta conta)
 """
 import json, sys, argparse, datetime as dt
+import html as htmllib  # alias: a variavel `html` (string do relatorio) reusa o nome
 from pathlib import Path
 from collections import defaultdict
 
 # ----------------------------- helpers -----------------------------
+def esc(s):
+    """Escapa texto-DADO vindo do analysis.json (escrito pelo agente LLM) antes de
+    injetar no HTML. Sem isso, um '<' vira abertura de tag e um '&' corrompe a
+    saida (ex.: 'CTR < 1%' ou 'custo & retorno'). Aplicar so no texto do agente,
+    nunca no HTML que nos mesmos geramos (badges, classes)."""
+    return htmllib.escape(str(s)) if s else ""
+
 def brl(v):
     s = f"{v:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -537,9 +545,9 @@ def novo_badge(it):
 diag_html = ""
 for it in items:
     cls = "diag" if it["cert"] == "confirmado" else "diag validar"
-    diag_html += (f'<div class="{cls}"><p><span class="dt">{it["title"]}</span> '
+    diag_html += (f'<div class="{cls}"><p><span class="dt">{esc(it["title"])}</span> '
                   f'{cert_badge(it["cert"])}{novo_badge(it)}<br>'
-                  f'<span class="dd">{it["detail"]}</span></p></div>')
+                  f'<span class="dd">{esc(it["detail"])}</span></p></div>')
 
 # Silêncio estratégico: análise válida pediu silence e não trouxe insights.
 # Mostramos uma linha mínima NO LUGAR da lista; as tabelas seguem normais.
@@ -551,7 +559,7 @@ if analysis is not None and analysis.get("silence") and not items:
 trend_html = ""
 if analysis is not None and analysis.get("trend_verdict"):
     trend_html = ('<div class="lead"><span class="tag">Tendência da conta</span>'
-                  f'<p>{analysis["trend_verdict"]}</p></div>')
+                  f'<p>{esc(analysis["trend_verdict"])}</p></div>')
 
 # Legenda de badges só faz sentido quando há itens com badge.
 diag_legend = legend if items else ""
@@ -561,7 +569,7 @@ task_html = ""
 for it in acts:
     task_html += (f'<div class="task"><span class="chk">&#9744;</span>'
                   f'<span class="prio p{it["prio"]}">{PRIO_LBL[it["prio"]]}</span>'
-                  f'{it["action"]} {cert_badge(it["cert"])}</div>')
+                  f'{esc(it["action"])} {cert_badge(it["cert"])}</div>')
 if not task_html:
     task_html = '<p class="small">Sem ações prioritárias neste período.</p>'
 
@@ -569,7 +577,7 @@ if not task_html:
 video_read_html = ""
 if analysis is not None and analysis.get("video_read"):
     video_read_html = ('<div class="lead"><span class="tag">Leitura do vídeo campeão</span>'
-                       f'<p>{analysis["video_read"]}</p></div>')
+                       f'<p>{esc(analysis["video_read"])}</p></div>')
 
 # funil de mensagens (linha abaixo do consolidado) — só com dado de 1ª resposta
 funnel_line = ""
@@ -669,7 +677,7 @@ sections.append(f'<h2>{secnum(k)}Diagnóstico — visão de gestor de tráfego</
 # Leitura de performance do gestor de ads (preenchida só no mensal): seção própria.
 if analysis is not None and analysis.get("manager_read"):
     sections.append(f'<h2>{secnum(k)}Leitura de performance do gestor</h2>'
-                    f'<p>{analysis["manager_read"]}</p>'); k += 1
+                    f'<p>{esc(analysis["manager_read"])}</p>'); k += 1
 sections.append(f'<h2>{secnum(k)}Plano de ação priorizado</h2>' + task_html); k += 1
 body_sections = "\n".join(sections)
 
@@ -715,7 +723,7 @@ if W["first_reply"] > 0:
                   f"<td>{W['first_reply']:.0f} ({pct(W['reply_rate'])})</td></tr>")
 def cert_txt(c): return "Confirmado" if c == "confirmado" else "Validar"
 email_acts = "".join(
-    f'<li style="margin-bottom:6px"><b>{PRIO_LBL[it["prio"]]}</b> · {it["action"]} '
+    f'<li style="margin-bottom:6px"><b>{PRIO_LBL[it["prio"]]}</b> · {esc(it["action"])} '
     f'<span style="font-size:11px;color:{"#2c6e2c" if it["cert"]=="confirmado" else "#8a5d00"}">'
     f'[{cert_txt(it["cert"])}]</span></li>' for it in acts[:4])
 body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#1d2530;font-size:14px;line-height:1.55">

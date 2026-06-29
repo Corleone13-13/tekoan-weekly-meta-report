@@ -69,6 +69,17 @@ want ">Vídeos</h2>"                              "bloco Videos presente no mens
 want "Relatório mensal · Meta Ads"              "modo mensal de fato ativo"
 
 echo "============================================================"
+echo "CASO (e) — caracteres especiais: texto do agente vai ESCAPADO no HTML"
+echo "============================================================"
+REPORT_MODE=weekly setup "$FX/windsor_sample_video.json" "$FX/analysis_chars.json"
+want "&lt; 1%"                 "'<' escapado no trend_verdict (&lt;)"
+want "&amp; retorno"           "'&' escapado no trend_verdict (&amp;)"
+want "&gt; meta"               "'>' escapado no trend_verdict (&gt;)"
+want "&lt;b&gt;teste&lt;/b&gt;" "tag injetada no detail virou texto escapado"
+absent "< 1%"                  "sequencia crua '< 1%' (nao pode existir)"
+absent "<b>teste</b>"          "tag '<b>teste</b>' literal injetada (nao pode existir)"
+
+echo "============================================================"
 echo "EXTRA — JSON quebrado nao quebra o relatorio (fail-open -> legacy)"
 echo "============================================================"
 cp "$FX/windsor_sample_video.json" "$ROOT/windsor.json"
