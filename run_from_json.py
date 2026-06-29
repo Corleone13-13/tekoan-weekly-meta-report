@@ -119,10 +119,15 @@ def main():
         except Exception as ex:
             print("WARN: windsor_period.json ignorado:", ex)
 
+    # analise escrita pelo agente (OPCIONAL): se existir analysis.json no cwd, o
+    # gerador renderiza essa analise; se nao existir, usa as regras fixas (fallback
+    # natural). Nunca quebra: arquivo ausente/invalido cai no legacy dentro do gerador.
+    analysis_arg = ["--analysis", "analysis.json"] if Path("analysis.json").exists() else []
+
     mode = os.environ.get("REPORT_MODE", "weekly")
     subprocess.run(["python3", "generate_report.py", "rows.json",
                     "--outdir", "./out", "--recipient", ",".join(TO),
-                    "--mode", mode] + period_arg, check=True)
+                    "--mode", mode] + period_arg + analysis_arg, check=True)
     e = json.loads(Path("out/email.json").read_text())
     pdf = Path(e["attachment"]) if e.get("attachment") else None
     has_pdf = bool(pdf and pdf.exists())
