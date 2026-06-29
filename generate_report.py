@@ -631,6 +631,36 @@ ranking_html = (f'<table><thead>{rank_head}</thead><tbody>{rank_rows}</tbody></t
                 '<p class="small">Ordenado por desempenho de conversão (CPL, com ajuste para '
                 'amostra pequena). 🏆 melhor criativo do período, ⚠️ pior. CPL = Gasto ÷ Conversas.</p>')
 
+# ----------------------------- Vídeo vs Imagem (consolidado por formato) -----------------------------
+# Soma os criativos por FORMATO (Vídeo se is_video, senão Imagem) e compara o que cada
+# formato entrega. SÓ renderiza quando há os dois formatos no ar; com um só não há comparação.
+fmt_tot = {"Vídeo": dict(spend=0.0, conv=0.0, imp=0.0, clicks=0.0, n=0),
+           "Imagem": dict(spend=0.0, conv=0.0, imp=0.0, clicks=0.0, n=0)}
+for _n, a in cre_aggs:
+    key = "Vídeo" if a["is_video"] else "Imagem"
+    f = fmt_tot[key]
+    f["spend"] += a["spend"]; f["conv"] += a["conv"]
+    f["imp"] += a["impressions"]; f["clicks"] += a["clicks"]; f["n"] += 1
+
+format_html = ""
+if fmt_tot["Vídeo"]["n"] > 0 and fmt_tot["Imagem"]["n"] > 0:  # precisa dos dois formatos
+    spend_tot = fmt_tot["Vídeo"]["spend"] + fmt_tot["Imagem"]["spend"]
+    fmt_rows = ""
+    for key in ("Vídeo", "Imagem"):
+        f = fmt_tot[key]
+        cpl = f["spend"] / f["conv"] if f["conv"] else 0
+        ctr = f["clicks"] / f["imp"] if f["imp"] else 0
+        share = f["spend"] / spend_tot if spend_tot else 0
+        fmt_rows += (f'<tr><td>{key}</td><td>{brl(f["spend"])}</td><td>{pct(share)}</td>'
+                     f'<td>{f["conv"]:.0f}</td><td>{brl(cpl) if f["conv"] else "—"}</td>'
+                     f'<td>{pct2(ctr)}</td></tr>')
+    format_html = ('<table><thead><tr><th>Formato</th><th>Gasto</th><th>% da verba</th>'
+                   '<th>Conversas</th><th>CPL</th><th>CTR</th></tr></thead><tbody>'
+                   + fmt_rows + '</tbody></table>'
+                   '<p class="small">Consolidado por formato de criativo no período. % da verba = gasto '
+                   'do formato ÷ gasto total. CPL = Gasto ÷ Conversas. Use para decidir alocação de verba '
+                   'entre vídeo e imagem.</p>')
+
 # ----------------------------- vídeos (só se houver criativo de vídeo) -----------------------------
 video_html = ""
 if has_video:
@@ -667,6 +697,9 @@ sections.append(f'<h2>{secnum(k)}Consolidado e por criativo</h2>'
 if reach_html:
     sections.append(f'<h2>{secnum(k)}Alcance e frequência</h2>' + reach_html); k += 1
 sections.append(f'<h2>{secnum(k)}Ranking de criativos</h2>' + ranking_html); k += 1
+# Vídeo vs Imagem: só quando os dois formatos estão no ar (há comparação a fazer).
+if format_html:
+    sections.append(f'<h2>{secnum(k)}Vídeo vs Imagem</h2>' + format_html); k += 1
 # Vídeos: aparece se houver criativo de vídeo OU leitura de vídeo escrita pelo agente.
 if video_html or video_read_html:
     sections.append(f'<h2>{secnum(k)}Vídeos</h2>' + video_read_html + video_html); k += 1

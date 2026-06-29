@@ -49,7 +49,8 @@ case "$FIXTURE" in
     grep -q "Ranking de criativos" "$REPORT_HTML" || { echo "FALHA: faltou 'Ranking de criativos'" >&2; exit 1; }
     grep -q ">Vídeos</h2>" "$REPORT_HTML"          || { echo "FALHA: faltou bloco 'Vídeos'" >&2; exit 1; }
     grep -q "🏆" "$REPORT_HTML"                     || { echo "FALHA: faltou marcador campeao '🏆'" >&2; exit 1; }
-    echo "OK: Ranking de criativos + Vídeos + 🏆 presentes."
+    grep -q "Vídeo vs Imagem" "$REPORT_HTML"        || { echo "FALHA: faltou bloco 'Vídeo vs Imagem' (fixture mista)" >&2; exit 1; }
+    echo "OK: Ranking de criativos + Vídeos + 🏆 + Vídeo vs Imagem presentes."
     ;;
   *estatico*)
     echo "Checando asseroes da fixture ESTATICA..."
@@ -57,7 +58,10 @@ case "$FIXTURE" in
     if grep -q ">Vídeos</h2>" "$REPORT_HTML"; then
       echo "FALHA: bloco 'Vídeos' nao deveria aparecer sem criativo de video" >&2; exit 1
     fi
-    echo "OK: Ranking de criativos presente e bloco 'Vídeos' ausente."
+    if grep -q "Vídeo vs Imagem" "$REPORT_HTML"; then
+      echo "FALHA: bloco 'Vídeo vs Imagem' nao deveria aparecer com um so formato" >&2; exit 1
+    fi
+    echo "OK: Ranking de criativos presente; blocos 'Vídeos' e 'Vídeo vs Imagem' ausentes."
     ;;
 esac
 
