@@ -26,6 +26,12 @@ def esc(s):
     nunca no HTML que nos mesmos geramos (badges, classes)."""
     return htmllib.escape(str(s)) if s else ""
 
+def cre_name_id(a):
+    """Rotulo em TEXTO PURO de um criativo: nome + #creative_id (quando houver).
+    Desambigua pecas distintas que compartilham o mesmo ad_name."""
+    cid = a.get("creative_id")
+    return f'{a["ad_name"]} #{cid}' if cid else a["ad_name"]
+
 def brl(v):
     s = f"{v:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -94,8 +100,12 @@ def delta_label(cur, prev, lower_is_better=True):
     return (f"{arrow} {abs(d)*100:.0f}%", cls)
 
 # ----------------------------- diagnóstico por regras fixas (fallback) -----------------------------
-def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
+def legacy_diagnostics(W, P, cre_aggs, piece_period, unidade, per_days):
     """Diagnóstico de gestor por REGRAS FIXAS (fallback determinístico).
+
+    `cre_aggs` é lista de (key, agg) com a peça identificada por creative_id
+    (fallback ad_name). `piece_period(a)` devolve o dict de reach/frequency/cpp
+    da peça ou None (sem atribuição inventada).
 
     Roda quando não há analysis.json válido. Cada item: title, detail,
     action (str ou None), cert ('confirmado'|'validar'), prio (1|2|3).
@@ -114,10 +124,11 @@ def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
             cert="confirmado", prio=1))
 
     # 2. Verba desbalanceada entre criativos
-    valid = [(n, a) for n, a in cre_aggs if a["conv"] > 0]
+    valid = [a for _k, a in cre_aggs if a["conv"] > 0]
     if len(valid) >= 2:
-        best_n, best = valid[0]
-        worst_n, worst = valid[-1]
+        best = valid[0]
+        worst = valid[-1]
+        best_n, worst_n = cre_name_id(best), cre_name_id(worst)
         if worst["cpl"] > best["cpl"] * 1.2:
             det = (f"{best_n}: CPL {brl(best['cpl'])} com {brl(best['spend'])} de verba. "
                    f"{worst_n}: CPL {brl(worst['cpl'])} com {brl(worst['spend'])}.")
@@ -202,9 +213,12 @@ def legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days):
             action="Se recorrer, alinhar a promessa do criativo com a abordagem inicial da IA de atendimento.",
             cert="validar", prio=2))
 
-    # 10. Frequência (fadiga real vs. público fresco) — só com dado de período
-    freqs = [(n, period_map[n]) for n, _ in cre_aggs
-             if n in period_map and period_map[n]["frequency"] > 0]
+    # 10. Frequência (fadiga real vs. público fresco) — só com dado de período da própria peça
+    freqs = []
+    for _k, a in cre_aggs:
+        pp = piece_period(a)
+        if pp and pp["frequency"] > 0:
+            freqs.append((cre_name_id(a), pp))
     if freqs:
         worst_fn, worst_fp = max(freqs, key=lambda t: t[1]["frequency"])
         fmax = worst_fp["frequency"]
@@ -383,14 +397,26 @@ else:  # weekly
 W = agg(cur_rows)
 P = agg(prev_rows) if prev_rows else None
 
-# por criativo (no período reportado)
+# por criativo (no período reportado) — CHAVE = creative_id (ID da Meta).
+# Assim peças DISTINTAS com o MESMO ad_name (a Meta não exige nome único) viram
+# linhas separadas. Retrocompatível: linha sem creative_id cai no ad_name como
+# chave (dados antigos seguem agrupando por nome, sem split e sem quebrar).
+def _cid_of(r):
+    cid = r.get("creative_id")
+    return str(cid) if cid not in (None, "", 0) else None
+
 creatives = defaultdict(list)
 for r in cur_rows:
-    creatives[r["ad_name"]].append(r)
-cre_aggs = sorted(
-    [(name, agg(rs)) for name, rs in creatives.items()],
-    key=lambda x: (x[1]["cpl"] if x[1]["conv"] else 9e9),
-)
+    cid = _cid_of(r)
+    key = f"cid::{cid}" if cid else f"name::{r['ad_name']}"
+    creatives[key].append(r)
+cre_aggs = []
+for key, rs in creatives.items():
+    a = agg(rs)
+    a["ad_name"] = rs[0]["ad_name"]
+    a["creative_id"] = _cid_of(rs[0])   # None em peça sem ID (fallback por nome)
+    cre_aggs.append((key, a))
+cre_aggs.sort(key=lambda x: (x[1]["cpl"] if x[1]["conv"] else 9e9))
 
 # ----------------------------- ranking de campeões -----------------------------
 _BIG = 9e9
@@ -424,20 +450,38 @@ has_video = any(a["is_video"] for _n, a in cre_aggs)
 # Reach e frequência não são aditivos por dia (a mesma pessoa repete), por isso vêm
 # de um fetch agregado à parte. Se o arquivo não existir/for inválido, o bloco some
 # e o relatório segue normal — zero risco de crash.
-period_map = {}
+#
+# JOIN por creative_id quando as entradas de período tiverem creative_id; senão,
+# por ad_name. Para uma PEÇA com creative_id, só atribuímos frequência se houver
+# entrada de período COM aquele creative_id — nunca por nome (vários creative_ids
+# dividem o mesmo ad_name e a frequência por nome não corresponde à peça).
+period_by_name, period_by_cid = {}, {}
 if args.period_data and Path(args.period_data).exists():
     try:
         for x in json.loads(Path(args.period_data).read_text()):
-            n = x.get("ad_name")
-            if not n:
-                continue
-            period_map[n] = dict(
+            entry = dict(
                 reach=float(x.get("reach") or 0),
                 frequency=float(x.get("frequency") or 0),
                 cpp=float(x.get("cpp") or 0))
+            n = x.get("ad_name")
+            if n:
+                period_by_name[n] = entry
+            cid = x.get("creative_id")
+            if cid not in (None, "", 0):
+                period_by_cid[str(cid)] = entry
     except Exception as _e:
         print("WARN: period-data ignorado:", _e)
-        period_map = {}
+        period_by_name, period_by_cid = {}, {}
+
+def piece_period(a):
+    """Reach/frequency/cpp da PEÇA, ou None. Peça com creative_id só casa por
+    creative_id (sem atribuição inventada por nome); peça sem ID casa por ad_name."""
+    cid = a.get("creative_id")
+    if cid:
+        return period_by_cid.get(cid)
+    return period_by_name.get(a["ad_name"])
+
+period_available = bool(period_by_name or period_by_cid)
 
 def thousands(v):
     return f"{v:,.0f}".replace(",", ".")
@@ -461,7 +505,7 @@ analysis = load_analysis(args.analysis)
 if analysis is not None:
     items = analysis["insights"]
 else:
-    items = legacy_diagnostics(W, P, cre_aggs, period_map, unidade, per_days)
+    items = legacy_diagnostics(W, P, cre_aggs, piece_period, unidade, per_days)
 
 # ----------------------------- HTML/PDF -----------------------------
 CSS = """
@@ -496,6 +540,7 @@ tbody tr.lose td { background: #fcf2f1; }
 .finding { margin: 0 0 11px 0; padding-left: 14px; border-left: 3px solid #1F3A5F; }
 .finding .ft { font-weight: 700; color: #1F3A5F; font-size: 10pt; }
 .small { font-size: 8.2pt; color: #6b7785; }
+.cid { color: #9aa3ad; font-size: 7.3pt; font-weight: 600; letter-spacing: 0.2px; }
 .legend { font-size: 8pt; color: #6b7785; margin: 0 0 11px 0; line-height: 1.7; }
 .badge { font-size: 6.8pt; font-weight: 700; padding: 1px 6px; border-radius: 9px; white-space: nowrap; }
 .badge.confirmado { background: #e3efe3; color: #2c6e2c; }
@@ -513,6 +558,14 @@ tbody tr.lose td { background: #fcf2f1; }
 .prio.p3 { background: #6b7785; }
 """
 
+def cre_label(a):
+    """Rótulo HTML de um criativo nas tabelas: #creative_id (cinza, menor) acima
+    do ad_name. Sem creative_id, mostra só o nome. ad_name e id passam por esc()."""
+    cid = a.get("creative_id")
+    if cid:
+        return f'<span class="cid">#{esc(cid)}</span><br>{esc(a["ad_name"])}'
+    return esc(a["ad_name"])
+
 def row_html(label, a, cls=""):
     return (f'<tr class="{cls}"><td>{label}</td><td>{brl(a["spend"])}</td>'
             f'<td>{brl(a["cpm"])}</td><td>{brl(a["cpc"])}</td><td>{pct2(a["ctr"])}</td>'
@@ -524,10 +577,10 @@ head = ('<tr><th>Recorte</th><th>Invest.</th><th>CPM</th><th>CPC</th><th>CTR</th
 
 cons = row_html(L["total"], W, "total")
 cre_html = ""
-for i, (n, a) in enumerate(cre_aggs):
+for i, (key, a) in enumerate(cre_aggs):
     cls = "win" if (i == 0 and a["conv"] > 0 and len(cre_aggs) > 1) else (
           "lose" if (i == len(cre_aggs)-1 and len(cre_aggs) > 1 and a["conv"] > 0) else "")
-    cre_html += row_html(n, a, cls)
+    cre_html += row_html(cre_label(a), a, cls)
 
 wow_html = ""
 if P:
@@ -615,15 +668,15 @@ if W["first_reply"] > 0:
                    f'{W["conv"]:.0f} conversas → {W["first_reply"]:.0f} com primeira resposta '
                    f'({pct(W["reply_rate"])} das conversas){blk_txt}.</p>')
 
-# tabela de alcance e frequência por criativo — só com dado de período
+# tabela de alcance e frequência por criativo — só com dado de período da própria peça
 reach_html = ""
-if period_map:
+if period_available:
     rows_r = ""
-    for n, _a in cre_aggs:
-        pm = period_map.get(n)
+    for key, a in cre_aggs:
+        pm = piece_period(a)
         if not pm or pm["reach"] <= 0:
             continue
-        rows_r += (f'<tr><td>{n}</td><td>{thousands(pm["reach"])}</td>'
+        rows_r += (f'<tr><td>{cre_label(a)}</td><td>{thousands(pm["reach"])}</td>'
                    f'<td>{freqx(pm["frequency"])}</td><td>{brl(pm["cpp"])}</td></tr>')
     if rows_r:
         reach_html = ('<table><thead><tr><th>Criativo</th><th>Alcance</th>'
@@ -635,14 +688,14 @@ if period_map:
 
 # ----------------------------- ranking de criativos (sempre) -----------------------------
 # Tabela de TODOS os criativos ordenada por performance de conversão (champion_score).
-# 🏆 marca o campeão, ⚠️ marca o pior. Frequência só aparece se houver dado de período.
-has_freq = bool(period_map) and any(
-    (period_map.get(n) or {}).get("frequency", 0) > 0 for n, _a in cre_aggs)
+# 🏆 marca o campeão, ⚠️ marca o pior. Frequência só aparece se a PEÇA tiver dado de período.
+has_freq = period_available and any(
+    (piece_period(a) or {}).get("frequency", 0) > 0 for _k, a in cre_aggs)
 rank_head = ('<tr><th>Criativo</th><th>Gasto</th><th>Conversas</th><th>CPL</th>'
              '<th>CTR</th>' + ('<th>Frequência</th>' if has_freq else '') + '</tr>')
 rank_rows = ""
 n_ranked = len(champ_ranked)
-for i, (n, a) in enumerate(champ_ranked):
+for i, (key, a) in enumerate(champ_ranked):
     mark, cls = "", ""
     if n_ranked > 1 and i == 0 and a["conv"] > 0:
         mark, cls = "🏆 ", "win"
@@ -650,9 +703,9 @@ for i, (n, a) in enumerate(champ_ranked):
         mark, cls = "⚠️ ", "lose"
     freq_td = ""
     if has_freq:
-        pm = period_map.get(n) or {}
+        pm = piece_period(a) or {}
         freq_td = f'<td>{freqx(pm["frequency"]) if pm.get("frequency") else "—"}</td>'
-    rank_rows += (f'<tr class="{cls}"><td>{mark}{n}</td><td>{brl(a["spend"])}</td>'
+    rank_rows += (f'<tr class="{cls}"><td>{mark}{cre_label(a)}</td><td>{brl(a["spend"])}</td>'
                   f'<td>{a["conv"]:.0f}</td><td>{brl(a["cpl"]) if a["conv"] else "—"}</td>'
                   f'<td>{pct2(a["ctr"])}</td>{freq_td}</tr>')
 ranking_html = (f'<table><thead>{rank_head}</thead><tbody>{rank_rows}</tbody></table>'
@@ -689,10 +742,11 @@ if fmt_tot["Vídeo"]["n"] > 0 and fmt_tot["Imagem"]["n"] > 0:  # precisa dos doi
                    'do formato ÷ gasto total. CPL = Gasto ÷ Conversas. Use para decidir alocação de verba '
                    'entre vídeo e imagem.</p>')
 
-# campeão do período (melhor criativo do ranking, se converteu) — usado no snapshot e no e-mail
+# campeão do período = a PEÇA (creative_id) vencedora, não o nome agregado. Rótulo
+# inclui nome + #id para o snapshot e o e-mail. Usado no snapshot e no e-mail.
 champ_name, champ_cpl = None, 0.0
 if champ_ranked and champ_ranked[0][1]["conv"] > 0:
-    champ_name = champ_ranked[0][0]
+    champ_name = cre_name_id(champ_ranked[0][1])
     champ_cpl = champ_ranked[0][1]["cpl"]
 
 # ----------------------------- Evolução (histórico de períodos anteriores) -----------------------------
@@ -719,10 +773,10 @@ if history:
 video_html = ""
 if has_video:
     vid_rows = ""
-    for n, a in champ_ranked:
+    for key, a in champ_ranked:
         if not a["is_video"]:
             continue
-        vid_rows += (f'<tr><td>{n}</td><td>{pct2(a["hook_rate"])}</td>'
+        vid_rows += (f'<tr><td>{cre_label(a)}</td><td>{pct2(a["hook_rate"])}</td>'
                      f'<td>{pct(a["hold_25"])}</td><td>{pct(a["hold_50"])}</td>'
                      f'<td>{pct(a["hold_75"])}</td><td>{pct(a["hold_100"])}</td>'
                      f'<td>{pct2(a["thruplay_rate"])}</td>'

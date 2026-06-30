@@ -1,0 +1,23 @@
+{
+  "result": [
+    { "date": "2026-06-26", "ad_name": "Estático A", "creative_id": "111",
+      "spend": 30.0, "impressions": 2000, "clicks": 40,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 8 },
+    { "date": "2026-06-27", "ad_name": "Estático A", "creative_id": "111",
+      "spend": 30.0, "impressions": 2100, "clicks": 42,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 7 },
+    { "date": "2026-06-28", "ad_name": "Estático A", "creative_id": "111",
+      "spend": 30.0, "impressions": 1900, "clicks": 38,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 7 },
+
+    { "date": "2026-06-26", "ad_name": "Estático A", "creative_id": "222",
+      "spend": 40.0, "impressions": 2200, "clicks": 30,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 2 },
+    { "date": "2026-06-27", "ad_name": "Estático A", "creative_id": "222",
+      "spend": 40.0, "impressions": 2300, "clicks": 31,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 2 },
+    { "date": "2026-06-28", "ad_name": "Estático A", "creative_id": "222",
+      "spend": 40.0, "impressions": 2100, "clicks": 29,
+      "actions_onsite_conversion_messaging_conversation_started_7d": 1 }
+  ]
+}

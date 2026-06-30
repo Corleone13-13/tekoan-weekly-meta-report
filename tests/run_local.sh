@@ -44,6 +44,19 @@ echo "out/email.json gerado | body_html: ${BODY_LEN} chars | report_html: ${REPO
 # Asseroes por tipo de fixture (Parte C). Greps no HTML completo do relatorio.
 # ----------------------------------------------------------------------------
 case "$FIXTURE" in
+  *split_id*)
+    echo "Checando asseroes da fixture SPLIT por creative_id..."
+    grep -q "Ranking de criativos" "$REPORT_HTML" || { echo "FALHA: faltou 'Ranking de criativos'" >&2; exit 1; }
+    # mesmo ad_name, dois creative_ids -> DUAS linhas, cada uma com seu #id
+    grep -q "#111" "$REPORT_HTML" || { echo "FALHA: faltou peça #111" >&2; exit 1; }
+    grep -q "#222" "$REPORT_HTML" || { echo "FALHA: faltou peça #222" >&2; exit 1; }
+    # cada #id aparece nas DUAS tabelas (Consolidado + Ranking) = 2 ocorrencias
+    n111="$(grep -o "#111" "$REPORT_HTML" | wc -l | tr -d ' ')"
+    [ "$n111" -ge 2 ] || { echo "FALHA: #111 deveria aparecer em 2 tabelas, achei $n111" >&2; exit 1; }
+    grep -q "🏆" "$REPORT_HTML" || { echo "FALHA: faltou campeao '🏆'" >&2; exit 1; }
+    grep -q "⚠️" "$REPORT_HTML" || { echo "FALHA: faltou pior '⚠️'" >&2; exit 1; }
+    echo "OK: duas pecas de mesmo ad_name separadas por #id (#111 campeao, #222 pior)."
+    ;;
   *video*)
     echo "Checando asseroes da fixture de VIDEO..."
     grep -q "Ranking de criativos" "$REPORT_HTML" || { echo "FALHA: faltou 'Ranking de criativos'" >&2; exit 1; }
@@ -61,7 +74,11 @@ case "$FIXTURE" in
     if grep -q "Vídeo vs Imagem" "$REPORT_HTML"; then
       echo "FALHA: bloco 'Vídeo vs Imagem' nao deveria aparecer com um so formato" >&2; exit 1
     fi
-    echo "OK: Ranking de criativos presente; blocos 'Vídeos' e 'Vídeo vs Imagem' ausentes."
+    # fallback retrocompatível: sem creative_id, NAO ha rotulo #id (agrupa por nome)
+    if grep -q 'class="cid"' "$REPORT_HTML"; then
+      echo "FALHA: rotulo #id nao deveria aparecer sem creative_id (fallback por nome)" >&2; exit 1
+    fi
+    echo "OK: Ranking presente; sem #id (fallback por nome); 'Vídeos'/'Vídeo vs Imagem' ausentes."
     ;;
 esac
 
