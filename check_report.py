@@ -17,7 +17,7 @@ Variaveis de ambiente:
     EXPECTED_TO     destinatarios esperados do relatorio, virgula-separado
                     (default enzo@tekoan.com.br,lorain@tekoan.com.br,fgimenez.mcc@gmail.com)
 """
-import os, json, urllib.request, unicodedata
+import os, json, urllib.request, urllib.parse, unicodedata
 
 KEY     = os.environ["BREVO_API_KEY"]
 SENDER  = os.environ.get("SENDER_EMAIL", "bonamini.enzo1@gmail.com")
@@ -52,33 +52,45 @@ def brevo_post(body):
         return r.status
 
 
+# O endpoint /v3/smtp/emails EXIGE ao menos um filtro (email|messageId|templateId):
+# consultar so por data devolve HTTP 400. Por isso consultamos UMA VEZ POR
+# destinatario esperado (filtro email=) e agregamos os resultados. Cada envio
+# gera um messageId PROPRIO por destinatario (a Brevo NAO compartilha um id unico
+# entre os destinatarios de um mesmo envio), entao duplicata NAO e "2+ ids no
+# total" e sim "o MESMO destinatario recebeu o relatorio 2+ vezes".
 err, hits = None, []
 try:
-    data = brevo_get("/v3/smtp/emails?startDate=%s&endDate=%s&limit=1000" % (DAY, DAY))
-    emails = data.get("transactionalEmails") or data.get("emails") or []
-    hits = [e for e in emails
-            if "relatorio meta ads" in norm(e.get("subject"))
-            and KIND in norm(e.get("subject"))]
+    for rcpt in sorted(EXPECTED):
+        data = brevo_get("/v3/smtp/emails?email=%s&startDate=%s&endDate=%s&limit=1000"
+                         % (urllib.parse.quote(rcpt), DAY, DAY))
+        emails = data.get("transactionalEmails") or data.get("emails") or []
+        for e in emails:
+            s = e.get("subject")
+            if "relatorio meta ads" in norm(s) and KIND in norm(s):
+                hits.append({"messageId": e.get("messageId") or e.get("date"),
+                             "email": (e.get("email") or rcpt).lower(),
+                             "subject": s})
 except Exception as ex:  # nunca aborta sem mandar veredito
     err = str(ex)
 
-# agrupa por messageId (cada destinatario do mesmo envio compartilha o id);
-# 2+ ids distintos = envio duplicado.
-by_msg = {}
+# agrupa por destinatario -> conjunto de messageIds (envios distintos p/ ele).
+by_rcpt = {}
 for e in hits:
-    by_msg.setdefault(e.get("messageId") or e.get("date"), set()).add((e.get("email") or "").lower())
-n = len(by_msg)
-recips = set().union(*by_msg.values()) if by_msg else set()
+    by_rcpt.setdefault(e["email"], set()).add(e["messageId"])
+recips = set(by_rcpt)
 faltando = EXPECTED - recips
-dup = n > 1
-enviado = n >= 1
+dup_map = {r: len(m) for r, m in by_rcpt.items() if len(m) > 1}  # destinatario 2+ vezes
+dup = bool(dup_map)
+enviado = len(recips) >= 1
+n = max((len(m) for m in by_rcpt.values()), default=0)  # rodadas p/ o mais atingido
 ok = (err is None) and enviado and (not dup) and (not faltando)
 status = "OK" if ok else ("ERRO DE VERIFICACAO" if err else "ATENCAO")
-subj_sample = hits[0].get("subject") if hits else "(nenhum encontrado)"
+subj_sample = hits[0]["subject"] if hits else "(nenhum encontrado)"
 
+dup_txt = (" — DUPLICADO (" + ", ".join(f"{r}={c}x" for r, c in sorted(dup_map.items())) + ")") if dup else ""
 rows = [("Status", status),
         ("Enviado", "sim" if enviado else "NAO ENCONTRADO"),
-        ("Envios distintos", str(n) + (" — DUPLICADO" if dup else "")),
+        ("Envios distintos", str(n) + dup_txt),
         ("Destinatarios", ", ".join(sorted(recips)) or "-")]
 if faltando:
     rows.append(("FALTANDO", ", ".join(sorted(faltando))))
