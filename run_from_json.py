@@ -94,25 +94,32 @@ def main():
                 n = x.get("ad_name")
                 if not n:
                     continue
+                cid = x.get("creative_id")
+                cid = str(cid) if cid not in (None, "", 0) else None
+                # CHAVE = creative_id quando houver (peca), senao ad_name. Assim
+                # o join de frequencia casa com o mesmo criterio do gerador
+                # (piece_period por creative_id) e nao mistura pecas DISTINTAS que
+                # compartilham o mesmo ad_name. Retrocompatível: sem creative_id,
+                # agrupa por nome como antes.
+                key = ("cid", cid) if cid else ("name", n)
                 r = x.get("reach") or 0
                 f = x.get("frequency") or 0
                 c = x.get("cpp") or 0
-                if n in pmap:
-                    # Mesmo ad_name = anuncios DISTINTOS com nome identico na Meta
-                    # (ela nao exige nome unico). Antes o segundo sobrescrevia o
-                    # primeiro e subestimava o alcance. Agora consolidamos:
+                if key in pmap:
+                    # Mesma chave = mesma peca em fetches parciais. Consolidamos:
                     # reach soma; frequency e cpp viram media ponderada por reach.
                     # Valido porque impressions = freq*reach e spend = cpp*reach/1000
                     # sao ambos aditivos, logo freq_total = sum(freq*reach)/sum(reach)
                     # e cpp_total = sum(cpp*reach)/sum(reach).
-                    a = pmap[n]
+                    a = pmap[key]
                     tot = a["reach"] + r
                     if tot > 0:
                         a["frequency"] = (a["frequency"] * a["reach"] + f * r) / tot
                         a["cpp"] = (a["cpp"] * a["reach"] + c * r) / tot
                     a["reach"] = tot
                 else:
-                    pmap[n] = {"ad_name": n, "reach": r, "frequency": f, "cpp": c}
+                    pmap[key] = {"ad_name": n, "creative_id": cid,
+                                 "reach": r, "frequency": f, "cpp": c}
             if pmap:
                 Path("period.json").write_text(json.dumps(list(pmap.values()), ensure_ascii=False))
                 period_arg = ["--period-data", "period.json"]
