@@ -15,7 +15,7 @@ Variaveis de ambiente:
     CHECK_LABEL     rotulo amigavel ('semanal'/'mensal')
     VERDICT_TO      destinatario do veredito (default enzo@tekoan.com.br)
     EXPECTED_TO     destinatarios esperados do relatorio, virgula-separado
-                    (default enzo@tekoan.com.br,lorain@tekoan.com.br,fgimenez.mcc@gmail.com)
+                    (default enzo@tekoan.com.br,lorain@tekoan.com.br,felipe@agenciatijolo.com.br)
 """
 import os, json, urllib.request, urllib.parse, unicodedata
 
@@ -27,7 +27,7 @@ LABEL   = os.environ.get("CHECK_LABEL", "semanal")
 VERDICT_TO = os.environ.get("VERDICT_TO", "enzo@tekoan.com.br")
 EXPECTED = {a.strip().lower() for a in os.environ.get(
     "EXPECTED_TO",
-    "enzo@tekoan.com.br,lorain@tekoan.com.br,fgimenez.mcc@gmail.com").split(",") if a.strip()}
+    "enzo@tekoan.com.br,lorain@tekoan.com.br,felipe@agenciatijolo.com.br").split(",") if a.strip()}
 
 
 def norm(s):
