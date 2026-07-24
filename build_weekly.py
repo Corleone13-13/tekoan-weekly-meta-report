@@ -14,10 +14,10 @@ por criativo (~10 linhas) e ja consolida corretamente ate as metricas de razao
 
 Fluxo na routine:
   1) `python3 build_weekly.py --print-dates` -> imprime as 4 datas. Semana
-     reportada = ultima semana de CALENDARIO fechada, SEGUNDA a DOMINGO (padrao
-     da Meta); semana anterior = a segunda-a-domingo imediatamente antes.
+     reportada = ultima semana de CALENDARIO fechada, DOMINGO a SABADO (padrao
+     da Meta); semana anterior = o domingo-a-sabado imediatamente antes.
      A routine roda na SEGUNDA 11h (cron `0 14 * * 1`), logo a semana reportada
-     e a que fechou no domingo anterior.
+     e a que fechou no sabado anterior.
   2) o agente faz 3 get_data AGREGADOS (sem date, usando date_from/date_to) e
      salva os resultados crus (objeto {"result":[...]}) em:
         cur_creatives.json  (semana reportada, por criativo: ad_name, creative_id,
@@ -59,18 +59,19 @@ VIDEO = ["actions_video_view", "video_play_actions_video_view",
 
 
 def week_dates(today):
-    """Ultima semana de CALENDARIO fechada, segunda a domingo (padrao da Meta).
+    """Ultima semana de CALENDARIO fechada, DOMINGO a SABADO (padrao da Meta).
 
-    Ancorado no calendario e nao em "ontem": `isoweekday()` da 1 na segunda e 7 no
-    domingo, entao `today - isoweekday()` cai sempre no domingo FECHADO mais recente,
-    qualquer que seja o dia da execucao. Rodando na segunda (o cron oficial) o
-    resultado e o mesmo de uma janela rolante de 7 dias terminando ontem; a diferenca
-    aparece no RE-DISPARO manual (terca, quarta...), que continua reportando a MESMA
-    semana em vez de deslizar a janela e quebrar o recorte segunda-domingo.
+    Ancorado no calendario e nao em "ontem". `weekday()` da 0 na segunda e 5 no
+    sabado, entao `(weekday + 2) % 7` (com 0 virando 7) e a distancia ate o sabado
+    FECHADO mais recente, qualquer que seja o dia da execucao: segunda volta 2 dias,
+    domingo volta 1, e sabado volta 7 (o sabado de hoje ainda nao fechou). Isso deixa
+    o RE-DISPARO manual em qualquer dia reportando a MESMA semana, em vez de deslizar
+    a janela e quebrar o recorte domingo-sabado.
     """
-    cur_end = today - dt.timedelta(days=today.isoweekday())   # domingo fechado mais recente
-    cur_start = cur_end - dt.timedelta(days=6)                # segunda daquela semana
-    prev_end = cur_start - dt.timedelta(days=1)               # domingo anterior
+    back = (today.weekday() + 2) % 7 or 7
+    cur_end = today - dt.timedelta(days=back)     # sabado fechado mais recente
+    cur_start = cur_end - dt.timedelta(days=6)    # domingo daquela semana
+    prev_end = cur_start - dt.timedelta(days=1)   # sabado anterior
     prev_start = prev_end - dt.timedelta(days=6)
     return cur_start, cur_end, prev_start, prev_end
 
