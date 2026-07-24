@@ -14,8 +14,10 @@ por criativo (~10 linhas) e ja consolida corretamente ate as metricas de razao
 
 Fluxo na routine:
   1) `python3 build_weekly.py --print-dates` -> imprime as 4 datas. Semana
-     reportada = ultimos 7 dias TERMINANDO ONTEM (mesma janela do last_14d, que
-     nao inclui hoje); semana anterior = os 7 dias imediatamente antes.
+     reportada = ultima semana de CALENDARIO fechada, SEGUNDA a DOMINGO (padrao
+     da Meta); semana anterior = a segunda-a-domingo imediatamente antes.
+     A routine roda na SEGUNDA 11h (cron `0 14 * * 1`), logo a semana reportada
+     e a que fechou no domingo anterior.
   2) o agente faz 3 get_data AGREGADOS (sem date, usando date_from/date_to) e
      salva os resultados crus (objeto {"result":[...]}) em:
         cur_creatives.json  (semana reportada, por criativo: ad_name, creative_id,
@@ -57,9 +59,18 @@ VIDEO = ["actions_video_view", "video_play_actions_video_view",
 
 
 def week_dates(today):
-    cur_end = today - dt.timedelta(days=1)          # ontem (last_14d termina ontem)
-    cur_start = cur_end - dt.timedelta(days=6)      # janela reportada = 7 dias
-    prev_end = cur_start - dt.timedelta(days=1)     # semana anterior = os 7 antes
+    """Ultima semana de CALENDARIO fechada, segunda a domingo (padrao da Meta).
+
+    Ancorado no calendario e nao em "ontem": `isoweekday()` da 1 na segunda e 7 no
+    domingo, entao `today - isoweekday()` cai sempre no domingo FECHADO mais recente,
+    qualquer que seja o dia da execucao. Rodando na segunda (o cron oficial) o
+    resultado e o mesmo de uma janela rolante de 7 dias terminando ontem; a diferenca
+    aparece no RE-DISPARO manual (terca, quarta...), que continua reportando a MESMA
+    semana em vez de deslizar a janela e quebrar o recorte segunda-domingo.
+    """
+    cur_end = today - dt.timedelta(days=today.isoweekday())   # domingo fechado mais recente
+    cur_start = cur_end - dt.timedelta(days=6)                # segunda daquela semana
+    prev_end = cur_start - dt.timedelta(days=1)               # domingo anterior
     prev_start = prev_end - dt.timedelta(days=6)
     return cur_start, cur_end, prev_start, prev_end
 
