@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-"""Orquestrador da Routine semanal Tekoan Meta Ads (cloud, robusto).
+"""LEGADO / DEPRECADO — NAO USAR EM PRODUCAO.
+
+Este era o orquestrador original do relatorio semanal. Foi substituido pelo par
+`build_weekly.py` + `run_from_json.py`, que a routine da nuvem usa hoje. Ficou
+incompativel com a producao em TRES pontos:
+
+  1) JANELA ERRADA. Usa `date_preset=last_14d` e deixa o gerador recortar os
+     ultimos 7 dias a partir da ultima data com entrega, ou seja, janela
+     ROLANTE. Desde 24/07/2026 o relatorio semanal usa a semana de CALENDARIO
+     fechada, DOMINGO a SABADO (recorte padrao da Meta), ancorada em
+     `build_weekly.py:week_dates`. Rodar este script produz numeros que NAO
+     batem com o relatorio oficial.
+  2) Windsor via REST (`connectors.windsor.ai`), que devolve 403 do IP do
+     datacenter. A producao le por MCP.
+  3) Envio por SMTP, com as portas 25/465/587 bloqueadas no sandbox. A producao
+     envia pela API HTTPS do Brevo.
+
+Mantido apenas como referencia historica. A execucao esta travada de proposito:
+para rodar mesmo assim (fora de producao), exporte RUN_LEGACY=1.
 
 Le credenciais de variaveis de ambiente (NUNCA hardcoded neste repo):
     WINDSOR_KEY, SMTP_USER, SMTP_PASS, MAIL_TO (virgula-separado)
@@ -16,6 +34,18 @@ from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+
+# Guarda de execucao: evita que este caminho legado seja rodado por engano e
+# produza um relatorio com janela ROLANTE, divergente do oficial (dom a sab).
+if not os.environ.get("RUN_LEGACY"):
+    raise SystemExit(
+        "run_weekly.py esta DEPRECADO e nao deve ser usado.\n"
+        "Producao: build_weekly.py (janela de calendario, domingo a sabado) + "
+        "run_from_json.py (envio pela API do Brevo).\n"
+        "Este script usa janela ROLANTE (last_14d), Windsor REST (403) e SMTP "
+        "(bloqueado), entao os numeros NAO batem com o relatorio oficial.\n"
+        "Se ainda assim quiser rodar fora de producao: RUN_LEGACY=1 python3 run_weekly.py"
+    )
 
 SMTP_USER = os.environ["SMTP_USER"]
 SMTP_PASS = os.environ["SMTP_PASS"]

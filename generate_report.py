@@ -382,7 +382,12 @@ if args.mode == "monthly":
              comp_prev="Mês anterior", comp_cur="Este mês", unit="mês",
              fname="mensal", subj=f"mês {mlabel}", footer="Relatório mensal Meta Ads")
 else:  # weekly
-    cut = maxd - dt.timedelta(days=6)        # janela "semana reportada" = últimos 7 dias
+    # Janela reportada = os 7 dias que terminam na ULTIMA data presente nos dados.
+    # Em producao quem define essa ultima data e o build_weekly.py, que carimba os
+    # criativos com CUR_END (o SABADO da semana de calendario fechada) e o total
+    # anterior com PREV_END (o sabado antes desse). Logo aqui o recorte resolve
+    # exatamente para domingo a sabado; NAO e uma janela rolante a partir de hoje.
+    cut = maxd - dt.timedelta(days=6)
     prev_cut = cut - dt.timedelta(days=7)
     cur_rows  = [r for r in rows if _d(r) >= cut]
     prev_rows = [r for r in rows if prev_cut <= _d(r) < cut]
