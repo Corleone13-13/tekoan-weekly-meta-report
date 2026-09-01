@@ -28,9 +28,6 @@ colada no prompt da routine e as guardas morreriam em silencio.
 import os
 import datetime as dt
 
-from build_weekly import week_dates
-from build_monthly import month_dates
-
 # campos numericos que run_from_json.py monta em cada row
 NUMERIC = ("spend", "impressions", "clicks", "conversations", "leads",
            "first_reply", "blocks", "video_3s", "video_plays", "thruplays",
@@ -62,7 +59,16 @@ def expected_end(mode, today=None):
     if override:
         return dt.date.fromisoformat(override)
     t = today or today_date()
-    return month_dates(t)[1] if mode == "monthly" else week_dates(t)[1]
+    # Import TARDIO e so do modo em uso, de proposito: a routine nao clona o repo,
+    # ela baixa uma lista fixa de arquivos, e a do semanal so traz build_weekly.py
+    # (a do mensal, so build_monthly.py). Importar os dois no topo faria o modulo
+    # quebrar no import — antes do try/except de run_from_json.py, ou seja, sem
+    # relatorio E sem alerta de falha.
+    if mode == "monthly":
+        from build_monthly import month_dates
+        return month_dates(t)[1]
+    from build_weekly import week_dates
+    return week_dates(t)[1]
 
 
 def _d(r):

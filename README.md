@@ -79,6 +79,14 @@ errado. `validate.expected_end()` recalcula a janela a partir da data de execuç
 usando as **mesmas** `week_dates`/`month_dates` do build, então a checagem é
 independente do dado.
 
+**A routine precisa baixar `validate.py`.** Ela não clona o repo, baixa uma lista
+fixa de arquivos — `validate.py` tem de estar nessa lista, junto do `build_*.py` do
+modo em uso. Duas defesas para o caso de alguém esquecer: `run_from_json.py` importa
+`validate` **dentro de `main()`**, então a ausência do arquivo vira `[Tekoan][FALHA]`
+em vez de matar o script antes do `try/except` (sem relatório *e* sem alerta); e
+`validate.py` importa o `build_*` do modo em uso **só na hora**, para o semanal não
+exigir `build_monthly.py` e vice-versa.
+
 Não existe chave para desligar as guardas — se existisse, acabaria colada no prompt
 da routine e elas morreriam em silêncio. Para reenviar um período antigo de
 propósito, declare a janela: `EXPECTED_END=2026-06-30`.

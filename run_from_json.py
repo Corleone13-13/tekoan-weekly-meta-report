@@ -13,8 +13,6 @@ SENDER_EMAIL (opcional, default bonamini.enzo1@gmail.com). DRY=1 pula o envio.
 import os, sys, json, base64, hashlib, subprocess, traceback, urllib.request, urllib.error
 from pathlib import Path
 
-from validate import validate, expected_end
-
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 SENDER_EMAIL  = os.environ.get("SENDER_EMAIL", "bonamini.enzo1@gmail.com")
 TO            = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
@@ -84,6 +82,13 @@ def main():
     # para ALERT_TO — o relatorio do cliente simplesmente nao sai. Ficam aqui, e nao
     # no verificador de entrega, porque aquele roda 1h depois: la o e-mail errado ja
     # esta na caixa do cliente.
+    # Import DENTRO de main() de proposito. A routine nao clona o repo, baixa uma
+    # lista fixa de arquivos; se validate.py faltar nessa lista, um import no topo
+    # mataria o script ANTES do try/except la embaixo — sem relatorio E sem alerta,
+    # que e justamente o modo de falha mudo que este repo ja penou para eliminar.
+    # Aqui dentro, o ImportError vira [Tekoan][FALHA] e nada e enviado ao cliente.
+    from validate import validate, expected_end
+
     mode = os.environ.get("REPORT_MODE", "weekly")
     errors, warns = validate(rows, mode, expected_end(mode))
     for w in warns:
