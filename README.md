@@ -38,7 +38,9 @@ bloqueado no sandbox).
 - `build_monthly.py` — o mesmo para o mês fechado.
 - `generate_report.py` — gera o PDF estilizado + `out/email.json`. Aceita
   `--mode weekly|monthly`, `--analysis` (análise escrita pelo agente) e `--history`.
-- `run_from_json.py` — mapeia os campos crus, chama o gerador e envia pelo Brevo.
+- `run_from_json.py` — mapeia os campos crus, roda as guardas, chama o gerador e
+  envia pelo Brevo.
+- `validate.py` — guardas de conteúdo executadas **antes** de gerar e enviar.
 - `check_report.py` — confere no log do Brevo se o relatório foi entregue.
 - `run_weekly.py` — **LEGADO, não usar.** Caminho antigo (Windsor REST + SMTP +
   janela rolante `last_14d`), incompatível com o recorte de calendário acima.
@@ -48,12 +50,50 @@ Fluxo da routine semanal: `build_weekly.py --print-dates`, 3 `get_data`
 agregados via MCP, `build_weekly.py`, o agente escreve `analysis.json`, e
 `run_from_json.py` gera e envia.
 
+## Guardas de conteúdo (`validate.py`)
+
+Rodam dentro de `run_from_json.py`, **antes** de gerar o relatório. Existem aqui, e
+não no verificador de entrega, porque aquele roda ~1h depois do envio: quando ele
+acusa, o e-mail errado já está na caixa do cliente.
+
+Um **ERRO** bloqueia o envio — cai no `SystemExit` que já existia, dispara
+`[Tekoan][FALHA]` só para `ALERT_TO` e o cliente não recebe nada. Um **AVISO** não
+bloqueia: o relatório sai e um `[Tekoan][AVISO]` vai só para `ALERT_TO`.
+
+| Nível | Guarda |
+|---|---|
+| ERRO | janela do dado ≠ período fechado que este run deveria reportar |
+| ERRO | nenhuma linha no período, ou investimento total zero |
+| ERRO | mesma peça no mesmo dia duas vezes (total sairia dobrado) |
+| ERRO | valor negativo, mais cliques que impressões, gasto sem impressão |
+| AVISO | sem período anterior (relatório sai sem comparativo) |
+| AVISO | investimento idêntico ao período anterior (cheiro de fetch reaproveitado) |
+| AVISO | investimento variou mais que `SPEND_DEV_MAX` contra o período anterior |
+| AVISO | curva de retenção de vídeo que sobe |
+
+A guarda de janela é a que justifica o resto. `generate_report.py` **deriva** o
+período reportado da maior data presente nos dados (`maxd`), então ele não tem como
+notar sozinho que está reportando o mês errado — passa a chamar de "mês fechado" o
+que quer que tenha chegado, e o relatório sai coerente e bonito com o período
+errado. `validate.expected_end()` recalcula a janela a partir da data de execução
+usando as **mesmas** `week_dates`/`month_dates` do build, então a checagem é
+independente do dado.
+
+Não existe chave para desligar as guardas — se existisse, acabaria colada no prompt
+da routine e elas morreriam em silêncio. Para reenviar um período antigo de
+propósito, declare a janela: `EXPECTED_END=2026-06-30`.
+
 ## Teste local (DRY, nunca envia e-mail)
 
 ```bash
 bash tests/run_local.sh tests/fixtures/windsor_sample_video.json
-bash tests/run_analysis.sh
+bash tests/run_analysis.sh          # inclui os casos de bloqueio + os unitários
+python3 tests/test_validate.py      # só as guardas
 ```
+
+As fixtures são congeladas numa data fixa, então os harnesses declaram
+`EXPECTED_END` derivado da própria fixture — em produção a janela vem da data de
+execução. `DRY=1` garante zero e-mail, inclusive no caminho de alerta.
 
 ## Segredos
 
@@ -64,8 +104,11 @@ Routines e são lidas do ambiente em tempo de execução:
 BREVO_API_KEY   # envio (API HTTPS do Brevo)
 SENDER_EMAIL    # remetente verificado no Brevo
 MAIL_TO         # destinatários separados por vírgula
-ALERT_TO        # destino do e-mail de falha
+ALERT_TO        # destino do e-mail de falha e do e-mail de aviso
 REPORT_MODE     # weekly | monthly
+EXPECTED_END    # opcional: força a janela esperada (reenvio de período antigo)
+SPEND_DEV_MAX   # opcional: desvio de investimento que vira aviso (default 0.7)
+TODAY           # opcional: simula outra data de execução (testes)
 ```
 
 A chave do Windsor não é usada por estes scripts: o acesso aos dados é via MCP,

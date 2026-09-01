@@ -20,6 +20,9 @@ HISTORY_ROW="$ROOT/out/history_row.json"
 
 # prepara o pipeline: copia dados (windsor) e, opcionalmente, analise e historico.
 setup() {  # $1 = fixture de dados ; $2 = analise (ou "-") ; $3 = historico (opcional, ou "-")
+  # janela esperada = a da propria fixture (ver comentario em run_local.sh)
+  EXPECTED_END="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('result') or d.get('data') or d;print(max(x['date'] for x in r))" "$1")"
+  export EXPECTED_END
   cp "$1" "$ROOT/windsor.json"
   cp "$FX/windsor_period_sample.json" "$ROOT/windsor_period.json"
   rm -f "$ROOT/analysis.json" "$ROOT/history.json"
@@ -126,9 +129,58 @@ else
   echo "  FALHA  pipeline quebrou com JSON invalido"; FAILED=1
 fi
 
+echo "============================================================"
+echo "CASO (h) — guarda de conteudo BLOQUEIA antes de gerar o relatorio"
+echo "============================================================"
+# Prova a ordem, que e o ponto todo: com a janela errada o pipeline tem de morrer
+# ANTES de produzir out/email.json. Se o email.json aparecesse, existiria um
+# relatorio pronto para ser enviado com o periodo errado.
+cp "$FX/windsor_sample_video.json" "$ROOT/windsor.json"
+cp "$FX/windsor_period_sample.json" "$ROOT/windsor_period.json"
+rm -f "$ROOT/analysis.json" "$ROOT/history.json" "$ROOT/out/email.json"
+if EXPECTED_END=2026-09-30 REPORT_MODE=monthly python3 run_from_json.py windsor.json > /tmp/guard_out.txt 2>&1; then
+  echo "  FALHA  pipeline seguiu com a janela errada"; FAILED=1
+else
+  grep -q "Janela errada" /tmp/guard_out.txt \
+    && echo "  OK  bloqueou por janela errada" \
+    || { echo "  FALHA  morreu por outro motivo:"; tail -3 /tmp/guard_out.txt; FAILED=1; }
+  [ ! -f "$ROOT/out/email.json" ] \
+    && echo "  OK  nenhum out/email.json foi gerado (nada pronto para enviar)" \
+    || { echo "  FALHA  gerou out/email.json mesmo bloqueado"; FAILED=1; }
+  grep -q "DRY-RUN: alerta de falha NAO enviado" /tmp/guard_out.txt \
+    && echo "  OK  nenhum e-mail de alerta tentado em DRY" \
+    || { echo "  FALHA  tentou enviar alerta em DRY"; FAILED=1; }
+fi
+
+echo "============================================================"
+echo "CASO (i) — dado impossivel tambem bloqueia (mais cliques que impressoes)"
+echo "============================================================"
+python3 -c "
+import json
+d = json.load(open('$FX/windsor_sample_video.json'))
+r = d.get('result') or d.get('data') or d
+r[0]['clicks'] = (r[0]['impressions'] or 0) + 1
+json.dump({'result': r}, open('$ROOT/windsor.json', 'w'))
+"
+rm -f "$ROOT/out/email.json"
+if EXPECTED_END=2026-06-28 REPORT_MODE=weekly python3 run_from_json.py windsor.json > /tmp/guard_out2.txt 2>&1; then
+  echo "  FALHA  pipeline seguiu com cliques > impressoes"; FAILED=1
+else
+  grep -q "Mais cliques que impressoes" /tmp/guard_out2.txt \
+    && echo "  OK  bloqueou por aritmetica impossivel" \
+    || { echo "  FALHA  morreu por outro motivo:"; tail -3 /tmp/guard_out2.txt; FAILED=1; }
+  [ ! -f "$ROOT/out/email.json" ] && echo "  OK  nada gerado" || { echo "  FALHA  gerou email.json"; FAILED=1; }
+fi
+
+echo "============================================================"
+echo "UNITARIOS — validate.py"
+echo "============================================================"
+python3 "$ROOT/tests/test_validate.py" || FAILED=1
+
 # limpeza dos artefatos transitorios deste teste
 rm -f "$ROOT/analysis.json" "$ROOT/history.json" "$ROOT/windsor.json" \
-      "$ROOT/windsor_period.json" "$ROOT/rows.json" "$ROOT/period.json"
+      "$ROOT/windsor_period.json" "$ROOT/rows.json" "$ROOT/period.json" \
+      /tmp/guard_out.txt /tmp/guard_out2.txt
 
 echo "============================================================"
 if [ "$FAILED" -eq 0 ]; then echo "TODOS OS CASOS OK (DRY-RUN, zero e-mail enviado)"; exit 0

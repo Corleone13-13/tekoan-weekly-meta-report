@@ -13,6 +13,8 @@ SENDER_EMAIL (opcional, default bonamini.enzo1@gmail.com). DRY=1 pula o envio.
 import os, sys, json, base64, hashlib, subprocess, traceback, urllib.request, urllib.error
 from pathlib import Path
 
+from validate import validate, expected_end
+
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 SENDER_EMAIL  = os.environ.get("SENDER_EMAIL", "bonamini.enzo1@gmail.com")
 TO            = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
@@ -77,6 +79,19 @@ def main():
         "video_avg_time": x.get("video_avg_time_watched_actions_video_view") or 0,
         "creative_id": x.get("creative_id"),
     } for x in raw]
+    # Guardas de conteudo ANTES de gerar e enviar (ver validate.py). Um ERRO vira
+    # SystemExit, cai no except de __main__ e dispara o alerta [Tekoan][FALHA] so
+    # para ALERT_TO — o relatorio do cliente simplesmente nao sai. Ficam aqui, e nao
+    # no verificador de entrega, porque aquele roda 1h depois: la o e-mail errado ja
+    # esta na caixa do cliente.
+    mode = os.environ.get("REPORT_MODE", "weekly")
+    errors, warns = validate(rows, mode, expected_end(mode))
+    for w in warns:
+        print("AVISO:", w)
+    if errors:
+        raise SystemExit("Guardas de conteudo bloquearam o envio:\n  - "
+                         + "\n  - ".join(errors))
+
     Path("rows.json").write_text(json.dumps(rows, ensure_ascii=False))
 
     # alcance/frequência por criativo (OPCIONAL): se o agente salvou windsor_period.json
@@ -135,7 +150,6 @@ def main():
     # gerador renderiza a seção Evolução; se nao existir, a seção simplesmente nao aparece.
     history_arg = ["--history", "history.json"] if Path("history.json").exists() else []
 
-    mode = os.environ.get("REPORT_MODE", "weekly")
     subprocess.run(["python3", "generate_report.py", "rows.json",
                     "--outdir", "./out", "--recipient", ",".join(TO),
                     "--mode", mode] + period_arg + analysis_arg + history_arg, check=True)
@@ -152,7 +166,14 @@ def main():
     # (efemero por sessao) e e chaveado pelo assunto, que inclui periodo+modo — logo um
     # relatorio de outro dia/semana/mes NUNCA e bloqueado. So e gravado APOS envio com
     # sucesso, entao uma falha de envio jamais impede uma nova tentativa.
-    marker = Path(f".sent_{hashlib.md5(e['subject'].encode()).hexdigest()}")
+    # O caminho e ABSOLUTO de proposito: gravado no diretorio corrente, o marcador
+    # some se o agente rodar o segundo envio de outro cwd — e a trava nao trava.
+    mark_dir = Path("/tmp/tekoan")
+    try:
+        mark_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        mark_dir = Path(".")  # best-effort: sem /tmp gravavel, volta ao comportamento antigo
+    marker = mark_dir / f".sent_{hashlib.md5(e['subject'].encode()).hexdigest()}"
     if marker.exists():
         print(f"JA ENVIADO nesta sessao — pulando envio duplicado | assunto: {e['subject']}")
         return
@@ -170,6 +191,24 @@ def main():
         pass  # marcador e best-effort; nunca deve quebrar o fluxo de envio
     print(f"EMAIL ENVIADO para {', '.join(TO)} | {mode} | Brevo HTTP {st} {resp}")
 
+    # O relatorio saiu, mas com ressalva: avisa SO o ALERT_TO (nunca o cliente).
+    # Aviso impresso em log de run headless e aviso que ninguem le.
+    if warns:
+        nome = "mensal" if mode == "monthly" else "semanal"
+        try:
+            brevo_send(ALERT_TO,
+                       f"[Tekoan][AVISO] Relatório {nome} saiu, mas com ressalva",
+                       "<div style=\"font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1d2530\">"
+                       f"<p>O relatório <b>{nome}</b> foi enviado normalmente para "
+                       f"{', '.join(TO)}. As guardas de conteúdo não bloquearam o envio, "
+                       "mas registraram o seguinte:</p><ul>"
+                       + "".join(f"<li>{w.replace('<', '&lt;')}</li>" for w in warns)
+                       + "</ul><p>Nada a fazer se cada ponto acima tiver explicação. "
+                         "Se não tiver, vale conferir o dado antes do próximo período.</p></div>")
+            print("Aviso enviado para:", ", ".join(ALERT_TO))
+        except Exception as ex:
+            print("WARN: falhou ao enviar o aviso (o relatorio JA foi enviado):", ex)
+
 
 if __name__ == "__main__":
     try:
@@ -178,6 +217,12 @@ if __name__ == "__main__":
         tb = traceback.format_exc()
         print("FALHA:\n" + tb)
         nome = "mensal" if os.environ.get("REPORT_MODE") == "monthly" else "semanal"
+        if os.environ.get("DRY") == "1":
+            # DRY=1 promete ZERO e-mail. O caminho de alerta ignorava isso e tentava
+            # falar com o Brevo mesmo em teste — com uma chave real no ambiente, um
+            # teste local mandaria alerta de verdade.
+            print("DRY-RUN: alerta de falha NAO enviado.")
+            raise
         try:
             brevo_send(ALERT_TO,
                        f"[Tekoan][FALHA] Relatório {nome} de Meta Ads NÃO foi enviado",

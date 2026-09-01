@@ -26,6 +26,13 @@ export BREVO_API_KEY=x
 export MAIL_TO=test@test.com
 export REPORT_MODE=weekly
 
+# As fixtures sao congeladas numa data fixa; em producao a janela esperada vem da
+# data de execucao (validate.expected_end). Aqui declaramos a janela da propria
+# fixture, senao a guarda G1 barra todo teste. Derivado do arquivo de proposito:
+# trocar a fixture nao exige lembrar de editar esta linha.
+EXPECTED_END="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('result') or d.get('data') or d;print(max(x['date'] for x in r))" "$FIXTURE")"
+export EXPECTED_END
+
 python3 run_from_json.py windsor.json
 
 EMAIL_JSON="$ROOT/out/email.json"
